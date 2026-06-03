@@ -16,6 +16,9 @@ mongoose.connect(process.env.MONGODB_URI)
 
 const app = express();
 
+// Trust the first proxy (required for Render/Heroku to use express-rate-limit correctly)
+app.set("trust proxy", 1);
+
 // Security Headers (Helmet)
 app.use(helmet());
 
