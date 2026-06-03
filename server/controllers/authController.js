@@ -1,193 +1,171 @@
-import bcrypt from "bcrypt";
-import User from "../models/User.js";
-import OTP from "../models/OTP.js";
-import jwt from "jsonwebtoken";
-import { sendOTP } from "../config/mail.js";
-import {
-  generateAccessToken,
-  generateRefreshToken,
-} from "../utils/generateToken.js";
+import { createAuth } from '@custom-auth/core';
+import { MongooseAdapter } from '@custom-auth/mongoose';
+import { SmtpEmailAdapter } from '@custom-auth/adapter-nodemailer';
 
-// Controller for user registration
+export const auth = createAuth({
+  secret: process.env.JWT_SECRET,
+  adapter: new MongooseAdapter(),
+  emailAdapter: new SmtpEmailAdapter({
+    host: process.env.SMTP_HOST,
+    port: Number(process.env.SMTP_PORT),
+    secure: process.env.SMTP_SECURE === 'true',
+    auth: {
+      user: process.env.SMTP_USER,
+      pass: process.env.SMTP_PASS,
+    },
+    from: process.env.EMAIL_FROM,
+  }),
+  emailVerification: true,
+  verifyEmailUrl: `${process.env.CLIENT_URL}/verify-email`,
+  resetPasswordUrl: `${process.env.CLIENT_URL}/reset-password`,
+});
+
+// Session refresh endpoint
+export const session = async (req, res) => {
+  try {
+    const token = req.cookies?.token || req.headers.authorization?.split(" ")[1];
+    if (!token) return res.status(401).json({ error: "No session" });
+
+    const payload = await auth.sessionManager.verifyToken(token);
+    if (!payload || !payload.sub) return res.status(401).json({ error: "Invalid session" });
+
+    const user = {
+      id: payload.sub,
+      email: payload.email,
+      name: payload.name,
+      role: payload.role
+    };
+
+    res.json({ user });
+  } catch (error) {
+    res.status(401).json({ error: "Invalid session" });
+  }
+};
+
 export const register = async (req, res) => {
-  const { name, email, password } = req.body;
-
   try {
-    // Check if a user with the given email already exists
-    const existingUser = await User.findOne({ email });
-    if (existingUser)
-      return res.status(400).json({ message: "User already exist" });
-
-    // Hash the user's password before saving
-    const hashedPassword = await bcrypt.hash(password, 10);
-    // Create a new user instance
-    const newUser = new User({ name, email, password: hashedPassword });
-    // Save the new user to the database
-    await newUser.save();
-
-    // Generate a 6-digit OTP
-    const code = Math.floor(100000 + Math.random() * 900000).toString();
-    // Set OTP expiration time to 10 minutes from now
-    const expiresAt = new Date(Date.now() + 10 * 60000); // 10 mins
-    // Save the OTP to the database
-    await OTP.create({ email, code, expiresAt });
-
-    // Send the OTP to the user's email
-    await sendOTP(email, code);
-    res
-      .status(201)
-      .json({ message: "Registered Successfully, OTP Sent to Email" });
+    const { email, password, name } = req.body;
+    const { user } = await auth.flows.register(email, password, name);
+    // Do not set a session cookie here; the user must verify their email first.
+    res.status(201).json({ message: "Registered! Please check your email to verify your account.", user });
   } catch (error) {
-    res.status(500).json({ message: "Server Error", error: error.message });
+    res.status(400).json({ error: error.message || "Registration failed" });
   }
 };
 
-// Controller for verifying OTP
-export const verifyOtp = async (req, res) => {
-  const { email, code } = req.body;
-
-  try {
-    // Find the OTP document for the given email and code
-    const otpDoc = await OTP.findOne({ email, code });
-    if (!otpDoc) return res.status(400).json({ message: "Invalid OTP" });
-
-    // Check if the OTP has expired
-    if (otpDoc.expiresAt < new Date()) {
-      // Delete the expired OTP
-      await OTP.deleteOne({ _id: otpDoc._id });
-      return res.status(400).json({ message: "OTP Expired" });
-    }
-
-    // Find the user associated with the email
-    const user = await User.findOne({ email });
-
-    if (!user) return res.status(404).json({ message: "User Not Found" });
-
-    // Mark the user's email as verified
-    user.isVerified = true;
-    await user.save();
-
-    // Clean up all OTPs for the verified email
-    await OTP.deleteMany({ email });
-
-    res.status(200).json({ message: "Email Verified Successfully" });
-    // Handle server errors
-  } catch (error) {
-    res.status(500).json({ message: "Server Error ", error: error.message });
-  }
-};
-
-// Controller for Login
 export const login = async (req, res) => {
-  const { email, password } = req.body;
-
   try {
-    // Find the user by email
-    const user = await User.findOne({ email });
-    if (!user || !user.isVerified) {
-      return res.status(400).json({ message: "invalid credential or email not verified" });
+    const { email, password } = req.body;
+    const result = await auth.flows.login(email, password);
+    if (result.mfaRequired) {
+      return res.status(200).json(result);
     }
-    // Compare the provided password with the hashed password in the database
-    const isMatch = await bcrypt.compare(password, user.password);
-    if (!isMatch) {
-      res.status(400).json({ message: "Invalid email or password" });
-    }
-    // Generate access and refresh tokens
-    const accessToken = generateAccessToken(user._id);
-    const refreshToken = generateRefreshToken(user._id);
-
-    // Set the refresh token as an HTTP-only cookie
-    res.cookie("refreshToken", refreshToken, {
-      // The cookie is only accessible by the web server
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
+    const { user, token } = result;
+    // Secure cookie setup with maxAge
+    const cookieOptions = { 
+      httpOnly: true, 
+      secure: process.env.NODE_ENV === "production", 
       sameSite: "strict",
-      maxAge: 7 * 24 * 60 * 60 * 1000,
-    });
-
-    res.status(200).json({
-      // Send the access token and user details in the response
-      token: accessToken,
-      user: {
-        id: user._id,
-        name: user.name,
-        email: user.email,
-      },
-    });
+      maxAge: (parseInt(process.env.COOKIE_MAX_AGE_DAYS) || 7) * 24 * 60 * 60 * 1000 
+    };
+    res.cookie("token", token, cookieOptions);
+    res.status(200).json({ user, token });
   } catch (error) {
-    res.status(500).json({ message: "Server Error", error: error.message });
+    res.status(400).json({ error: error.message || "Login failed" });
   }
 };
 
-// Controller for refreshing access tokens using a refresh token
-export const refresh = async (req, res) => {
-  // Get the refresh token from cookies
-  const token = req.cookies.refreshToken;
-  if (!token) {
-    return res.status(401).json({ message: "No token provided" });
-  }
-
+export const logout = async (req, res) => {
   try {
-    // Verify the refresh token
-    const decoded = jwt.verify(token, process.env.JWT_REFRESH_SECRET);
-    // Generate a new access token
-    const newAccessToken = generateAccessToken(decoded.id);
-    res.status(200).json({ token: newAccessToken });
+    res.clearCookie("token");
+    res.status(200).json({ message: "Logged Out" });
   } catch (error) {
-    res.status(403).json({ message: "Invalid refresh token" });
+    res.status(500).json({ error: error.message });
   }
 };
 
-// Controller for forgotPassword
 export const forgotPassword = async (req, res) => {
-  const { email } = req.body;
-
   try {
-    // Find the user by email and check if they are verified
-    const user = await User.findOne({ email });
-    if (!user || !user.isVerified) {
-      return res.status(400).json({ message: "User not Found or Not Verified" });
-    }
-
-    // Generate a 6-digit OTP
-    const code = Math.floor(100000 + Math.random() * 900000).toString();
-    // Set OTP expiration time to 10 minutes
-    const expiresAt = new Date(Date.now() + 10 * 60000);
-    // Create and save the OTP
-    await OTP.create({ email, code, expiresAt });
-    await sendOTP(email, code);
-    res.status(200).json({ message: "OTP send for password reset" });
+    const { email } = req.body;
+    await auth.flows.requestPasswordReset(email, `${process.env.CLIENT_URL}/reset-password`);
+    res.status(200).json({ message: "Password reset email sent" });
   } catch (error) {
-    res.status(500).json({ message: "Server error", error: error.message });
+    res.status(400).json({ error: error.message });
   }
 };
 
-// Controller for resetting password using OTP
 export const resetPassword = async (req, res) => {
-  const { email, code, newPassword } = req.body;
-
   try {
-    // Find the OTP document for the given email and code
-    const otpDoc = await OTP.findOne({ email, code });
-
-    // Check if the OTP is invalid or expired
-    if (!otpDoc || otpDoc.expiresAt < new Date()) {
-      return res.status(400).json({ message: "Invalid or Expired OTP" });
-    }
-    // Hash the new password
-    const hashedPassword = await bcrypt.hash(newPassword, 10);
-    // Update the user's password in the database
-    await User.findOneAndUpdate({ email }, { password: hashedPassword });
-
-    await OTP.deleteMany({ email }); // Clean up all OTPs for the email after successful password reset
-    res.status(200).json({ message: "Password updated Successfully" });
+    const { token, email, password } = req.body;
+    await auth.flows.resetPassword(token, email, password);
+    
+    // Auto-login after password reset
+    const { user, token: sessionToken } = await auth.flows.login(email, password);
+    const cookieOptions = { 
+      httpOnly: true, 
+      secure: process.env.NODE_ENV === "production", 
+      sameSite: "strict",
+      maxAge: (parseInt(process.env.COOKIE_MAX_AGE_DAYS) || 7) * 24 * 60 * 60 * 1000 
+    };
+    res.cookie("token", sessionToken, cookieOptions);
+    
+    res.status(200).json({ message: "Password updated successfully", user, token: sessionToken });
   } catch (error) {
-    res.status(500).json({ message: "Server error", error: error.message });
+    res.status(400).json({ error: error.message });
   }
 };
 
-export const logout = (req, res) => {
-  // Clear the refresh token cookie
-  res.clearCookie("refreshToken");
-  res.status(200).json({ message: "Logged Out" });
+export const magicLink = async (req, res) => {
+  try {
+    const { email } = req.body;
+    await auth.flows.requestMagicLink(email, `${process.env.CLIENT_URL}/magic-link`);
+    res.status(200).json({ message: "Magic link sent" });
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+};
+
+export const verifyMagicLink = async (req, res) => {
+  try {
+    const { token, email } = req.query;
+    if (!token || !email) return res.status(400).json({ error: "Missing token or email" });
+    
+    const result = await auth.flows.verifyMagicLink(token, decodeURIComponent(email));
+    const { user, token: sessionToken } = result;
+    
+    const cookieOptions = { 
+      httpOnly: true, 
+      secure: process.env.NODE_ENV === "production", 
+      sameSite: "strict",
+      maxAge: (parseInt(process.env.COOKIE_MAX_AGE_DAYS) || 7) * 24 * 60 * 60 * 1000 
+    };
+    res.cookie("token", sessionToken, cookieOptions);
+    res.status(200).json({ user, token: sessionToken });
+  } catch (error) {
+    res.status(400).json({ error: error.message || "Invalid or expired magic link" });
+  }
+};
+
+export const verifyEmail = async (req, res) => {
+  try {
+    const { token, email } = req.query;
+    if (!token || !email) return res.status(400).json({ error: "Missing token or email" });
+    
+    const result = await auth.flows.verifyEmail(token, decodeURIComponent(email));
+    
+    // Auto-login the user after verifying their email
+    const sessionToken = result.token || await auth.sessionManager.createToken(result.user);
+    const cookieOptions = { 
+      httpOnly: true, 
+      secure: process.env.NODE_ENV === "production", 
+      sameSite: "strict",
+      maxAge: (parseInt(process.env.COOKIE_MAX_AGE_DAYS) || 7) * 24 * 60 * 60 * 1000 
+    };
+    res.cookie("token", sessionToken, cookieOptions);
+    
+    res.status(200).json({ user: result.user, token: sessionToken });
+  } catch (error) {
+    console.error("[verifyEmail Error]:", error);
+    res.status(400).json({ error: error.message || "Invalid verification link" });
+  }
 };

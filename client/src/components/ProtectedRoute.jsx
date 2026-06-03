@@ -1,7 +1,9 @@
 import { Navigate } from "react-router-dom";
-import { useSelector } from "react-redux";
+import { useSession } from "@custom-auth/react";
 
 export default function ProtecttedRoute({ children }) {
-  const token = useSelector((state) => state.auth.token);
-  return token ? children : <Navigate to="/" />;
+  const { user, isLoading } = useSession();
+  
+  if (isLoading) return null;
+  return user ? children : <Navigate to="/" />;
 }

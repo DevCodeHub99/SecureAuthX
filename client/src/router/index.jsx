@@ -1,11 +1,12 @@
 import { createBrowserRouter } from "react-router-dom";
 import App from "../App";
 import Signup from "../pages/Signup";
-import VerifyOtp from "../pages/VerifyOtp";
 import Login from "../pages/Login";
 import Dashboard from "../pages/Dashboard";
 import ForgotPassword from "../pages/ForgotPassword";
 import ResetPassword from "../pages/ResetPassword";
+import VerifyEmail from "../pages/VerifyEmail";
+import MagicLink from "../pages/MagicLink";
 import ProtectedRoute from "../components/ProtectedRoute";
 
 const router = createBrowserRouter([
@@ -22,16 +23,20 @@ const router = createBrowserRouter([
         element: <Signup />,
       },
       {
-        path: "verify-otp",
-        element: <VerifyOtp />,
-      },
-      {
         path: "forgot-password",
         element: <ForgotPassword />,
       },
       {
         path: "reset-password",
         element: <ResetPassword />,
+      },
+      {
+        path: "verify-email",
+        element: <VerifyEmail />,
+      },
+      {
+        path: "magic-link",
+        element: <MagicLink />,
       },
       {
         path: "dashboard",

@@ -1,16 +1,15 @@
 import { createRoot } from "react-dom/client";
 import { StrictMode } from "react";
-import { Provider } from "react-redux";
 import { RouterProvider } from "react-router-dom";
+import { AuthProvider } from "@custom-auth/react";
 
-import store from "./app/store.js";
 import router from "./router/index.jsx";
 import "./index.css";
 
 createRoot(document.getElementById("root")).render(
   <StrictMode>
-    <Provider store={store}>
+    <AuthProvider apiBaseUrl={import.meta.env.VITE_API_URL}>
       <RouterProvider router={router} />
-    </Provider>
+    </AuthProvider>
   </StrictMode>
 );
