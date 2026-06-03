@@ -65,7 +65,7 @@ export const login = async (req, res) => {
     const cookieOptions = { 
       httpOnly: true, 
       secure: process.env.NODE_ENV === "production", 
-      sameSite: "strict",
+      sameSite: process.env.NODE_ENV === "production" ? "none" : "strict",
       maxAge: (parseInt(process.env.COOKIE_MAX_AGE_DAYS) || 7) * 24 * 60 * 60 * 1000 
     };
     res.cookie("token", token, cookieOptions);
@@ -104,7 +104,7 @@ export const resetPassword = async (req, res) => {
     const cookieOptions = { 
       httpOnly: true, 
       secure: process.env.NODE_ENV === "production", 
-      sameSite: "strict",
+      sameSite: process.env.NODE_ENV === "production" ? "none" : "strict",
       maxAge: (parseInt(process.env.COOKIE_MAX_AGE_DAYS) || 7) * 24 * 60 * 60 * 1000 
     };
     res.cookie("token", sessionToken, cookieOptions);
@@ -136,7 +136,7 @@ export const verifyMagicLink = async (req, res) => {
     const cookieOptions = { 
       httpOnly: true, 
       secure: process.env.NODE_ENV === "production", 
-      sameSite: "strict",
+      sameSite: process.env.NODE_ENV === "production" ? "none" : "strict",
       maxAge: (parseInt(process.env.COOKIE_MAX_AGE_DAYS) || 7) * 24 * 60 * 60 * 1000 
     };
     res.cookie("token", sessionToken, cookieOptions);
@@ -158,7 +158,7 @@ export const verifyEmail = async (req, res) => {
     const cookieOptions = { 
       httpOnly: true, 
       secure: process.env.NODE_ENV === "production", 
-      sameSite: "strict",
+      sameSite: process.env.NODE_ENV === "production" ? "none" : "strict",
       maxAge: (parseInt(process.env.COOKIE_MAX_AGE_DAYS) || 7) * 24 * 60 * 60 * 1000 
     };
     res.cookie("token", sessionToken, cookieOptions);
