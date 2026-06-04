@@ -8,6 +8,7 @@ import ResetPassword from "../pages/ResetPassword";
 import VerifyEmail from "../pages/VerifyEmail";
 import MagicLink from "../pages/MagicLink";
 import ProtectedRoute from "../components/ProtectedRoute";
+import AuthRoute from "../components/AuthRoute";
 
 const router = createBrowserRouter([
   {
@@ -16,11 +17,19 @@ const router = createBrowserRouter([
     children: [
       {
         path: "",
-        element: <Login />,
+        element: (
+          <AuthRoute>
+            <Login />
+          </AuthRoute>
+        ),
       },
       {
         path: "signup",
-        element: <Signup />,
+        element: (
+          <AuthRoute>
+            <Signup />
+          </AuthRoute>
+        ),
       },
       {
         path: "forgot-password",

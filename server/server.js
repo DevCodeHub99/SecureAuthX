@@ -6,6 +6,8 @@ import mongoose from "mongoose";
 import helmet from "helmet";
 import { rateLimit } from "express-rate-limit";
 import authRoutes from "./routes/authRoutes.js";
+import { checkOrigin } from "./middlewares/checkOrigin.js";
+import { errorHandler } from "./middlewares/errorHandler.js";
 
 mongoose.connect(process.env.MONGODB_URI)
   .then(() => console.log("MongoDB connected"))
@@ -41,19 +43,37 @@ app.use(express.json());
 app.use(cookieParser());
 
 // Mount authentication routes under the /api/auth path
-app.use("/api/auth", authRoutes);
+app.use("/api/auth", checkOrigin, authRoutes);
+
+// JSON 404 Fallback for undefined API routes
+app.use((req, res) => {
+  res.status(404).json({ error: "Endpoint Not Found" });
+});
 
 // Global Error Handler (prevents HTML stack traces from leaking)
-app.use((err, req, res, next) => {
-  console.error("Global Error:", err);
-  res.status(500).json({ error: "Internal Server Error" });
-});
+app.use(errorHandler);
 
 // Start the server only if we aren't in Vercel's serverless production environment
 if (process.env.NODE_ENV !== "production") {
-  app.listen(process.env.PORT || 5001, () => {
+  const server = app.listen(process.env.PORT || 5001, () => {
     console.log(`Server is running on: localhost:${process.env.PORT || 5001}`);
   });
+
+  // Graceful Shutdown
+  const gracefulShutdown = () => {
+    console.log("Shutting down gracefully...");
+    server.close(async () => {
+      console.log("Closed out remaining HTTP connections.");
+      if (mongoose.connection.readyState === 1) {
+        await mongoose.connection.close();
+        console.log("MongoDB connection closed.");
+      }
+      process.exit(0);
+    });
+  };
+
+  process.on("SIGTERM", gracefulShutdown);
+  process.on("SIGINT", gracefulShutdown);
 }
 
 // Export the app for Vercel Serverless Functions
