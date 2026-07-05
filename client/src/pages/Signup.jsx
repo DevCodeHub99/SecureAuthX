@@ -11,11 +11,13 @@ export default function Signup() {
   });
   const [error, setError] = useState(null);
   const [showPassword, setShowPassword] = useState(false);
-  const { signUp, isLoading } = useSignUp();
+  const apiBaseUrl = import.meta.env.VITE_API_URL;
+  const { signUp, isLoading } = useSignUp(apiBaseUrl);
   const navigate = useNavigate();
 
   const handleChange = (e) => {
-    setFormData({ ...formData, [e.target.name]: e.target.value });
+    const value = e.target.name === "email" ? e.target.value.toLowerCase().trim() : e.target.value;
+    setFormData({ ...formData, [e.target.name]: value });
     setError(null);
   };
 

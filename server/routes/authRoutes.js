@@ -1,6 +1,7 @@
 import express from "express";
 import { body, validationResult } from "express-validator";
 import { rateLimit } from "express-rate-limit";
+import { requireAuth } from "../middlewares/requireAuth.js";
 import {
   register,
   login,
@@ -10,7 +11,10 @@ import {
   resetPassword,
   magicLink,
   verifyMagicLink,
-  verifyEmail
+  verifyEmail,
+  handleAuthRequest,
+  updatePassword,
+  resetPasswordWithOtp
 } from "../controllers/authController.js";
 
 const router = express.Router();
@@ -90,5 +94,24 @@ router.post(
 
 router.get("/magic-link/verify", verifyMagicLink);
 router.get("/verify-email", verifyEmail);
+router.post("/update-password", requireAuth, updatePassword);
+router.post(
+  "/reset-password-otp",
+  authLimiter,
+  [
+    body("email").isEmail().withMessage("Valid email is required").normalizeEmail(),
+    body("code").notEmpty().withMessage("Verification code is required"),
+    body("password").isLength({ min: 8 }).withMessage("Password must be at least 8 characters long"),
+  ],
+  validateRequest,
+  resetPasswordWithOtp
+);
+
+// Catch-all route mounts for MFA, WebAuthn, OAuth, and Email OTP
+router.use("/mfa", handleAuthRequest);
+router.use("/webauthn", handleAuthRequest);
+router.use("/oauth", handleAuthRequest);
+router.use("/callback", handleAuthRequest);
+router.use("/otp", handleAuthRequest);
 
 export default router;

@@ -8,6 +8,9 @@ import { rateLimit } from "express-rate-limit";
 import authRoutes from "./routes/authRoutes.js";
 import { checkOrigin } from "./middlewares/checkOrigin.js";
 import { errorHandler } from "./middlewares/errorHandler.js";
+import morgan from "morgan";
+import { requireAuth } from "./middlewares/requireAuth.js";
+import { requirePermission } from "./middlewares/requirePermission.js";
 
 mongoose.connect(process.env.MONGODB_URI)
   .then(() => console.log("MongoDB connected"))
@@ -17,6 +20,9 @@ mongoose.connect(process.env.MONGODB_URI)
   });
 
 const app = express();
+
+// Auto-log every request using morgan library
+app.use(morgan("dev"));
 
 // Trust the first proxy (required for Render/Heroku to use express-rate-limit correctly)
 app.set("trust proxy", 1);
@@ -44,6 +50,15 @@ app.use(cookieParser());
 
 // Mount authentication routes under the /api/auth path
 app.use("/api/auth", checkOrigin, authRoutes);
+
+// Protected routes to demonstrate Session Auth & RBAC
+app.get("/api/protected", requireAuth, (req, res) => {
+  res.json({ message: "Success: You have accessed a secure route!", user: req.user });
+});
+
+app.get("/api/admin-data", requireAuth, requirePermission("settings:write"), (req, res) => {
+  res.json({ message: "Success: Admin settings permission verified. Welcome, Administrator!" });
+});
 
 // JSON 404 Fallback for undefined API routes
 app.use((req, res) => {
