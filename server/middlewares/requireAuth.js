@@ -2,7 +2,7 @@ import { auth } from "../controllers/authController.js";
 
 export const requireAuth = async (req, res, next) => {
   try {
-    const token = req.cookies?.['auth-token'] || req.headers.authorization?.split(" ")[1];
+    const token = req.cookies?.['auth-token'] || req.headers.authorization?.split(" ")[1] || req.query.token;
     if (!token) return res.status(401).json({ error: "Unauthorized: No token provided" });
 
     const payload = await auth.sessionManager.verifyToken(token);

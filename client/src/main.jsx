@@ -9,14 +9,24 @@ import "./index.css";
 // Global fetch interceptor to support header-based authentication, bypassing third-party cookie blocking
 const originalFetch = window.fetch;
 window.fetch = async (resource, config = {}) => {
-  const url = typeof resource === 'string' ? resource : (resource.url || "");
+  let url = typeof resource === 'string' ? resource : (resource.url || "");
   const token = localStorage.getItem("authToken");
   const apiUrl = import.meta.env.VITE_API_URL || "/api/auth";
   const isTargetApi = url.includes(apiUrl);
 
+  let updatedResource = resource;
   let updatedConfig = { ...config };
 
   if (token && isTargetApi) {
+    // Append token as query parameter to bypass Vercel header stripping
+    const separator = url.includes("?") ? "&" : "?";
+    const newUrl = `${url}${separator}token=${encodeURIComponent(token)}`;
+    if (typeof resource === 'string') {
+      updatedResource = newUrl;
+    } else {
+      updatedResource = new Request(newUrl, resource);
+    }
+
     if (!updatedConfig.headers) {
       updatedConfig.headers = {};
     }
@@ -40,7 +50,7 @@ window.fetch = async (resource, config = {}) => {
     }
   }
 
-  const response = await originalFetch(resource, updatedConfig);
+  const response = await originalFetch(updatedResource, updatedConfig);
 
   if (response.ok && isTargetApi) {
     if (url.includes("/logout")) {

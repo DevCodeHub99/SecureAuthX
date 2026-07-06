@@ -149,7 +149,7 @@ const getCookieOptions = (req) => {
 // Session refresh endpoint
 export const session = async (req, res) => {
   try {
-    const token = req.cookies?.['auth-token'] || req.headers.authorization?.split(" ")[1];
+    const token = req.cookies?.['auth-token'] || req.headers.authorization?.split(" ")[1] || req.query.token;
     if (!token) return res.status(401).json({ error: "No session" });
 
     const payload = await auth.sessionManager.verifyToken(token);
@@ -294,9 +294,16 @@ export const handleAuthRequest = async (req, res) => {
     const protocol = req.secure || req.headers['x-forwarded-proto'] === 'https' ? 'https' : 'http';
     const url = `${protocol}://${req.headers.host}${req.originalUrl}`;
 
+    // Map headers and inject Authorization Bearer token from query/cookies fallback if missing
+    const reqHeaders = new Headers(req.headers);
+    const token = req.cookies?.['auth-token'] || req.headers.authorization?.split(" ")[1] || req.query.token;
+    if (token && !reqHeaders.has("authorization")) {
+      reqHeaders.set("authorization", `Bearer ${token}`);
+    }
+
     const requestOptions = {
       method: req.method,
-      headers: new Headers(req.headers),
+      headers: reqHeaders,
     };
 
     if (!['GET', 'HEAD'].includes(req.method)) {
