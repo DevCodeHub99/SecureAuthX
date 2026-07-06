@@ -92,7 +92,7 @@ export const auth = createAuth({
   webauthn: {
     rpName: 'SecureAuthX',
     rpID: new URL(process.env.CLIENT_URL || 'http://localhost:5173').hostname,
-    origin: process.env.CLIENT_URL || 'http://localhost:5173',
+    origin: (process.env.CLIENT_URL || 'http://localhost:5173').replace(/\/+$/, ""),
   },
 });
 
@@ -135,6 +135,16 @@ auth.flows.setupMfa = async function (userId) {
   };
 };
 
+// Centralized helper to build cookie settings defensively for production environments
+const getCookieOptions = (req) => {
+  const isProd = process.env.NODE_ENV === "production" || req.secure || req.headers['x-forwarded-proto'] === 'https';
+  return {
+    httpOnly: true,
+    secure: isProd,
+    sameSite: isProd ? "none" : "strict",
+    maxAge: (parseInt(process.env.COOKIE_MAX_AGE_DAYS) || 7) * 24 * 60 * 60 * 1000
+  };
+};
 
 // Session refresh endpoint
 export const session = async (req, res) => {
@@ -184,13 +194,7 @@ export const login = async (req, res) => {
       return res.status(200).json(result);
     }
     const { user, token } = result;
-    // Secure cookie setup with maxAge
-    const cookieOptions = { 
-      httpOnly: true, 
-      secure: process.env.NODE_ENV === "production", 
-      sameSite: process.env.NODE_ENV === "production" ? "none" : "strict",
-      maxAge: (parseInt(process.env.COOKIE_MAX_AGE_DAYS) || 7) * 24 * 60 * 60 * 1000 
-    };
+    const cookieOptions = getCookieOptions(req);
     res.cookie("auth-token", token, cookieOptions);
     res.status(200).json({ user, token });
   } catch (error) {
@@ -200,11 +204,8 @@ export const login = async (req, res) => {
 
 export const logout = async (req, res) => {
   try {
-    const cookieOptions = { 
-      httpOnly: true, 
-      secure: process.env.NODE_ENV === "production", 
-      sameSite: process.env.NODE_ENV === "production" ? "none" : "strict"
-    };
+    const cookieOptions = getCookieOptions(req);
+    delete cookieOptions.maxAge; // Clearing options don't require maxAge
     res.clearCookie("auth-token", cookieOptions);
     res.status(200).json({ message: "Logged Out" });
   } catch (error) {
@@ -231,12 +232,7 @@ export const resetPassword = async (req, res) => {
     
     // Auto-login after password reset
     const { user, token: sessionToken } = await auth.flows.login(normalizedEmail, password);
-    const cookieOptions = { 
-      httpOnly: true, 
-      secure: process.env.NODE_ENV === "production", 
-      sameSite: process.env.NODE_ENV === "production" ? "none" : "strict",
-      maxAge: (parseInt(process.env.COOKIE_MAX_AGE_DAYS) || 7) * 24 * 60 * 60 * 1000 
-    };
+    const cookieOptions = getCookieOptions(req);
     res.cookie("auth-token", sessionToken, cookieOptions);
     
     res.status(200).json({ message: "Password updated successfully", user, token: sessionToken });
@@ -265,12 +261,7 @@ export const verifyMagicLink = async (req, res) => {
     const result = await auth.flows.verifyMagicLink(token, normalizedEmail);
     const { user, token: sessionToken } = result;
     
-    const cookieOptions = { 
-      httpOnly: true, 
-      secure: process.env.NODE_ENV === "production", 
-      sameSite: process.env.NODE_ENV === "production" ? "none" : "strict",
-      maxAge: (parseInt(process.env.COOKIE_MAX_AGE_DAYS) || 7) * 24 * 60 * 60 * 1000 
-    };
+    const cookieOptions = getCookieOptions(req);
     res.cookie("auth-token", sessionToken, cookieOptions);
     res.status(200).json({ user, token: sessionToken });
   } catch (error) {
@@ -288,12 +279,7 @@ export const verifyEmail = async (req, res) => {
     
     // Auto-login the user after verifying their email
     const sessionToken = result.token || await auth.sessionManager.createToken(result.user);
-    const cookieOptions = { 
-      httpOnly: true, 
-      secure: process.env.NODE_ENV === "production", 
-      sameSite: process.env.NODE_ENV === "production" ? "none" : "strict",
-      maxAge: (parseInt(process.env.COOKIE_MAX_AGE_DAYS) || 7) * 24 * 60 * 60 * 1000 
-    };
+    const cookieOptions = getCookieOptions(req);
     res.cookie("auth-token", sessionToken, cookieOptions);
     
     res.status(200).json({ user: result.user, token: sessionToken });
@@ -403,12 +389,7 @@ export const resetPasswordWithOtp = async (req, res) => {
     const result = await auth.flows.login(normalizedEmail, password);
     const { user, token } = result;
     
-    const cookieOptions = { 
-      httpOnly: true, 
-      secure: process.env.NODE_ENV === "production", 
-      sameSite: process.env.NODE_ENV === "production" ? "none" : "strict",
-      maxAge: (parseInt(process.env.COOKIE_MAX_AGE_DAYS) || 7) * 24 * 60 * 60 * 1000 
-    };
+    const cookieOptions = getCookieOptions(req);
     res.cookie("auth-token", token, cookieOptions);
     
     res.status(200).json({ message: "Password reset successfully! Logging you in...", user, token });

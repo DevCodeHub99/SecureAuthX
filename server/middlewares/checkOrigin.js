@@ -4,13 +4,12 @@ export const checkOrigin = (req, res, next) => {
     const origin = req.headers.origin;
     const referer = req.headers.referer;
     
-    // Allow if it matches the configured client URL
-    const allowedOrigin = process.env.CLIENT_URL;
+    // Normalize origins by stripping trailing slashes
+    const cleanOrigin = origin ? origin.replace(/\/+$/, "") : "";
+    const cleanAllowedOrigin = process.env.CLIENT_URL ? process.env.CLIENT_URL.replace(/\/+$/, "") : "";
     
-    // Ensure at least one header is present and matches the allowed origin
-    // Note: referer often includes trailing slashes or paths, so we use startsWith
-    const isOriginValid = origin === allowedOrigin;
-    const isRefererValid = referer && referer.startsWith(allowedOrigin);
+    const isOriginValid = cleanOrigin === cleanAllowedOrigin;
+    const isRefererValid = referer && referer.replace(/\/+$/, "").startsWith(cleanAllowedOrigin);
 
     if (!isOriginValid && !isRefererValid) {
       console.warn(`[CSRF Blocked] Blocked request from Origin: ${origin}, Referer: ${referer}`);

@@ -40,8 +40,9 @@ const globalLimiter = rateLimit({
 });
 app.use(globalLimiter);
 
-// Enable CORS with specific origin and credentials
-app.use(cors({ origin: process.env.CLIENT_URL, credentials: true }));
+// Enable CORS with normalized origin (stripping trailing slash) and credentials
+const clientOrigin = process.env.CLIENT_URL ? process.env.CLIENT_URL.replace(/\/+$/, "") : "http://localhost:5173";
+app.use(cors({ origin: clientOrigin, credentials: true }));
 // Parse JSON request bodies
 app.use(express.json());
 
