@@ -17,12 +17,27 @@ window.fetch = async (resource, config = {}) => {
   let updatedConfig = { ...config };
 
   if (token && isTargetApi) {
-    const headers = { ...updatedConfig.headers };
-    const hasAuth = Object.keys(headers).some(k => k.toLowerCase() === 'authorization');
-    if (!hasAuth) {
-      headers["Authorization"] = `Bearer ${token}`;
+    if (!updatedConfig.headers) {
+      updatedConfig.headers = {};
     }
-    updatedConfig.headers = headers;
+
+    const headers = updatedConfig.headers;
+    if (headers instanceof Headers) {
+      if (!headers.has("Authorization")) {
+        headers.set("Authorization", `Bearer ${token}`);
+      }
+    } else if (Array.isArray(headers)) {
+      const hasAuth = headers.some(([k]) => k.toLowerCase() === 'authorization');
+      if (!hasAuth) {
+        headers.push(["Authorization", `Bearer ${token}`]);
+      }
+    } else {
+      updatedConfig.headers = { ...headers };
+      const hasAuth = Object.keys(updatedConfig.headers).some(k => k.toLowerCase() === 'authorization');
+      if (!hasAuth) {
+        updatedConfig.headers["Authorization"] = `Bearer ${token}`;
+      }
+    }
   }
 
   const response = await originalFetch(resource, updatedConfig);
