@@ -90,6 +90,7 @@ export default function ForgotPassword() {
       }
 
       setMessage("Password reset successfully! Logging you in...");
+      await new Promise((resolve) => setTimeout(resolve, 150));
       await refresh(); // Refresh session context in state
       setTimeout(() => {
         navigate("/dashboard");

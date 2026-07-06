@@ -38,6 +38,7 @@ export default function VerifyEmail() {
         }
 
         setStatus("success");
+        await new Promise((resolve) => setTimeout(resolve, 150));
         await refresh();
         setTimeout(() => {
           navigate("/dashboard");

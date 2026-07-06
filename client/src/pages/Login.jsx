@@ -59,6 +59,7 @@ export default function Login() {
         return;
       }
       if (res && res.ok) {
+        await new Promise((resolve) => setTimeout(resolve, 150));
         await refresh();
         navigate("/dashboard");
       } else {
@@ -106,6 +107,7 @@ export default function Login() {
     setMessage("");
     try {
       await verifyOtp(email, otpCode);
+      await new Promise((resolve) => setTimeout(resolve, 150));
       await refresh();
       navigate("/dashboard");
     } catch (err) {
@@ -118,6 +120,7 @@ export default function Login() {
     setMessage("");
     try {
       await verifyMfa(mfaTempToken, mfaCode);
+      await new Promise((resolve) => setTimeout(resolve, 150));
       await refresh();
       navigate("/dashboard");
     } catch (err) {
@@ -134,6 +137,7 @@ export default function Login() {
     try {
       const result = await loginWithPasskey(email);
       if (result) {
+        await new Promise((resolve) => setTimeout(resolve, 150));
         await refresh();
         navigate("/dashboard");
       }

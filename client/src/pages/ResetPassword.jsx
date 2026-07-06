@@ -56,6 +56,7 @@ export default function ResetPassword() {
       }
       
       setSuccess(true);
+      await new Promise((resolve) => setTimeout(resolve, 150));
       await refresh();
       localStorage.removeItem("resetEmail");
       setTimeout(() => {

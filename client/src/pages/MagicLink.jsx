@@ -39,6 +39,7 @@ export default function MagicLink() {
 
         setStatus("success");
         // Ensure the auth context picks up the new session cookie
+        await new Promise((resolve) => setTimeout(resolve, 150));
         await refresh();
         
         setTimeout(() => {
