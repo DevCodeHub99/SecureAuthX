@@ -638,6 +638,7 @@ export const listSessions = async (req, res) => {
       sessions: sessions.map(s => ({
         id: s.id,
         createdAt: s.createdAt,
+        lastActive: s.updatedAt || s.createdAt,
         expiresAt: s.expiresAt,
         ipAddress: s.ipAddress || 'Unknown IP',
         userAgent: s.userAgent || 'Authorized Session',

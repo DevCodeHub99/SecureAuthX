@@ -35,6 +35,22 @@ export const requireAuth = async (req, res, next) => {
       sessionId: payload.jti, // Attach session ID (jti) from the verified token
     };
 
+    // Asynchronously update last active timestamp and metadata to prevent blocking request path
+    if (payload.jti && auth.config.adapter?.sessionModel) {
+      const rawIp = req.headers['x-forwarded-for'] || req.ip || req.socket.remoteAddress || '';
+      let ipAddress = typeof rawIp === 'string' && rawIp.includes(',') ? rawIp.split(',')[0].trim() : rawIp;
+      if (ipAddress === '::1' || ipAddress === '::ffff:127.0.0.1') {
+        ipAddress = '127.0.0.1';
+      }
+      const userAgent = req.headers['user-agent'] || 'Authorized Device';
+
+      auth.config.adapter.sessionModel.findByIdAndUpdate(payload.jti, {
+        ipAddress,
+        userAgent,
+        updatedAt: new Date()
+      }).catch(err => console.error('[requireAuth] Session update error:', err.message));
+    }
+
     next();
   } catch (error) {
     res.status(401).json({ error: 'Unauthorized: Invalid session' });

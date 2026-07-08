@@ -745,7 +745,7 @@ export default function Dashboard() {
                                 {currentSession.userAgent}
                               </p>
                               <p className="text-3xs text-gray-500 font-bold mt-0.5">
-                                {currentSession.ipAddress} • Created: {formatDate(currentSession.createdAt)}
+                                {currentSession.ipAddress} • Last Active: {formatDate(currentSession.lastActive || currentSession.createdAt)}
                               </p>
                             </div>
                           </div>
@@ -797,7 +797,7 @@ export default function Dashboard() {
                                       {s.userAgent}
                                     </p>
                                     <p className="text-3xs text-gray-500 font-bold mt-0.5">
-                                      {s.ipAddress} • Created: {formatDate(s.createdAt)}
+                                      {s.ipAddress} • Last Active: {formatDate(s.lastActive || s.createdAt)}
                                     </p>
                                   </div>
                                 </div>
