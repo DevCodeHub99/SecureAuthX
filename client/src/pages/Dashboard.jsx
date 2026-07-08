@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { useSession, useSignOut, useMfa, usePasskeys, useAuth, useUpdatePassword } from "@custom-auth/react";
 import { useNavigate } from "react-router-dom";
 import logo from "../assets/secure-auth-x-logo.png";
+import { Laptop, Smartphone, Tv, ShieldAlert } from 'lucide-react';
 
 export default function Dashboard() {
   const apiBaseUrl = import.meta.env.VITE_API_URL;
@@ -52,24 +53,12 @@ export default function Dashboard() {
   const getDeviceIcon = (userAgent) => {
     const ua = String(userAgent).toLowerCase();
     if (ua.includes('tv') || ua.includes('smart') || ua.includes('apple-tv') || ua.includes('chromecast')) {
-      return (
-        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth="1.5" stroke="currentColor" className="w-5 h-5 text-[#255F38]">
-          <path strokeLinecap="round" strokeLinejoin="round" d="M6 20.25h12m-7.5-3v3m3-3v3m-10.125-3h14.25c.621 0 1.125-.504 1.125-1.125V4.875c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v11.25c0 .621.504 1.125 1.125 1.125Z" />
-        </svg>
-      );
+      return <Tv className="w-5 h-5 text-[#255F38]" />;
     }
     if (ua.includes('iphone') || ua.includes('android') || ua.includes('phone') || ua.includes('mobile')) {
-      return (
-        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth="1.5" stroke="currentColor" className="w-5 h-5 text-[#255F38]">
-          <path strokeLinecap="round" strokeLinejoin="round" d="M10.5 1.5H8.25A2.25 2.25 0 0 0 6 3.75v16.5a2.25 2.25 0 0 0 2.25 2.25h7.5A2.25 2.25 0 0 0 18 20.25V3.75a2.25 2.25 0 0 0-2.25-2.25H13.5m-3 0V3h3V1.5m-3 0h3m-3 18.75h3" />
-        </svg>
-      );
+      return <Smartphone className="w-5 h-5 text-[#255F38]" />;
     }
-    return (
-      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth="1.5" stroke="currentColor" className="w-5 h-5 text-[#255F38]">
-        <path strokeLinecap="round" strokeLinejoin="round" d="M9 17.25v1.007a3 3 0 0 1-.879 2.122L7.5 21h9l-.621-.621A3 3 0 0 1 15 18.257V17.25m6-12V15a2.25 2.25 0 0 1-2.25 2.25H5.25A2.25 2.25 0 0 1 3 15V5.25m18 0A2.25 2.25 0 0 0 18.75 3H5.25A2.25 2.25 0 0 0 3 5.25m18 0V12a2.25 2.25 0 0 1-2.25 2.25H5.25A2.25 2.25 0 0 1 3 12V5.25" />
-      </svg>
-    );
+    return <Laptop className="w-5 h-5 text-[#255F38]" />;
   };
 
   const fetchSessions = async () => {
