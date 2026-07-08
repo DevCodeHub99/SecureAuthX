@@ -189,6 +189,26 @@ const getCookieOptions = (req) => {
 };
 
 // ---------------------------------------------------------------------------
+export const parseUserAgent = (rawUserAgent) => {
+  let deviceName = 'Authorized Device';
+  
+  if (/windows/i.test(rawUserAgent)) deviceName = 'Windows PC';
+  else if (/macintosh/i.test(rawUserAgent)) deviceName = 'Mac';
+  else if (/iphone/i.test(rawUserAgent)) deviceName = 'iPhone';
+  else if (/ipad/i.test(rawUserAgent)) deviceName = 'iPad';
+  else if (/android/i.test(rawUserAgent)) deviceName = 'Android Device';
+  else if (/linux/i.test(rawUserAgent)) deviceName = 'Linux Device';
+
+  let browserName = '';
+  if (/chrome|crios/i.test(rawUserAgent) && !/edge|edg/i.test(rawUserAgent)) browserName = 'Chrome';
+  else if (/safari/i.test(rawUserAgent) && !/chrome|crios/i.test(rawUserAgent)) browserName = 'Safari';
+  else if (/firefox|fxios/i.test(rawUserAgent)) browserName = 'Firefox';
+  else if (/edge|edg/i.test(rawUserAgent)) browserName = 'Edge';
+  else if (/opera|opr/i.test(rawUserAgent)) browserName = 'Opera';
+
+  return browserName ? `${deviceName} (${browserName})` : deviceName;
+};
+
 // updateSessionMeta — updates the newly created session with IP & User-Agent metadata
 // ---------------------------------------------------------------------------
 const updateSessionMeta = async (req, token) => {
@@ -197,23 +217,7 @@ const updateSessionMeta = async (req, token) => {
     const payload = await auth.sessionManager.verifyToken(token);
     if (payload?.jti) {
       const rawUserAgent = req.headers['user-agent'] || '';
-      let deviceName = 'Authorized Device';
-      
-      if (/windows/i.test(rawUserAgent)) deviceName = 'Windows PC';
-      else if (/macintosh/i.test(rawUserAgent)) deviceName = 'Mac';
-      else if (/iphone/i.test(rawUserAgent)) deviceName = 'iPhone';
-      else if (/ipad/i.test(rawUserAgent)) deviceName = 'iPad';
-      else if (/android/i.test(rawUserAgent)) deviceName = 'Android Device';
-      else if (/linux/i.test(rawUserAgent)) deviceName = 'Linux Device';
-
-      let browserName = '';
-      if (/chrome|crios/i.test(rawUserAgent) && !/edge|edg/i.test(rawUserAgent)) browserName = 'Chrome';
-      else if (/safari/i.test(rawUserAgent) && !/chrome|crios/i.test(rawUserAgent)) browserName = 'Safari';
-      else if (/firefox|fxios/i.test(rawUserAgent)) browserName = 'Firefox';
-      else if (/edge|edg/i.test(rawUserAgent)) browserName = 'Edge';
-      else if (/opera|opr/i.test(rawUserAgent)) browserName = 'Opera';
-
-      const userAgentLabel = browserName ? `${deviceName} (${browserName})` : deviceName;
+      const userAgentLabel = parseUserAgent(rawUserAgent);
 
       // Extract client IP (handle multiple proxies securely)
       const rawIp = req.headers['x-forwarded-for'] || req.headers['x-real-ip'] || req.ip || req.socket?.remoteAddress || '';

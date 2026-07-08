@@ -1,4 +1,4 @@
-import { auth } from '../controllers/authController.js';
+import { auth, parseUserAgent } from '../controllers/authController.js';
 
 /**
  * requireAuth middleware — verifies the JWT and attaches fresh user data from
@@ -42,11 +42,12 @@ export const requireAuth = async (req, res, next) => {
       if (ipAddress === '::1' || ipAddress === '::ffff:127.0.0.1') {
         ipAddress = '127.0.0.1';
       }
-      const userAgent = req.headers['user-agent'] || 'Authorized Device';
+      const rawUserAgent = req.headers['user-agent'] || 'Authorized Device';
+      const userAgentLabel = parseUserAgent(rawUserAgent);
 
       auth.config.adapter.sessionModel.findByIdAndUpdate(payload.jti, {
         ipAddress,
-        userAgent,
+        userAgent: userAgentLabel,
         updatedAt: new Date()
       }).catch(err => console.error('[requireAuth] Session update error:', err.message));
     }
