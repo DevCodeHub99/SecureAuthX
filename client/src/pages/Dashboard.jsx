@@ -49,6 +49,29 @@ export default function Dashboard() {
     return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()}, ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
   };
 
+  const getDeviceIcon = (userAgent) => {
+    const ua = String(userAgent).toLowerCase();
+    if (ua.includes('tv') || ua.includes('smart') || ua.includes('apple-tv') || ua.includes('chromecast')) {
+      return (
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth="1.5" stroke="currentColor" className="w-5 h-5 text-[#255F38]">
+          <path strokeLinecap="round" strokeLinejoin="round" d="M6 20.25h12m-7.5-3v3m3-3v3m-10.125-3h14.25c.621 0 1.125-.504 1.125-1.125V4.875c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v11.25c0 .621.504 1.125 1.125 1.125Z" />
+        </svg>
+      );
+    }
+    if (ua.includes('iphone') || ua.includes('android') || ua.includes('phone') || ua.includes('mobile')) {
+      return (
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth="1.5" stroke="currentColor" className="w-5 h-5 text-[#255F38]">
+          <path strokeLinecap="round" strokeLinejoin="round" d="M10.5 1.5H8.25A2.25 2.25 0 0 0 6 3.75v16.5a2.25 2.25 0 0 0 2.25 2.25h7.5A2.25 2.25 0 0 0 18 20.25V3.75a2.25 2.25 0 0 0-2.25-2.25H13.5m-3 0V3h3V1.5m-3 0h3m-3 18.75h3" />
+        </svg>
+      );
+    }
+    return (
+      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth="1.5" stroke="currentColor" className="w-5 h-5 text-[#255F38]">
+        <path strokeLinecap="round" strokeLinejoin="round" d="M9 17.25v1.007a3 3 0 0 1-.879 2.122L7.5 21h9l-.621-.621A3 3 0 0 1 15 18.257V17.25m6-12V15a2.25 2.25 0 0 1-2.25 2.25H5.25A2.25 2.25 0 0 1 3 15V5.25m18 0A2.25 2.25 0 0 0 18.75 3H5.25A2.25 2.25 0 0 0 3 5.25m18 0V12a2.25 2.25 0 0 1-2.25 2.25H5.25A2.25 2.25 0 0 1 3 12V5.25" />
+      </svg>
+    );
+  };
+
   const fetchSessions = async () => {
     setIsLoadingSessions(true);
     try {
@@ -608,63 +631,107 @@ export default function Dashboard() {
 
             {/* Active Sessions & Logged-in Devices Section */}
             <div className="bg-white/40 rounded-2xl p-6 border border-white/50 shadow-sm backdrop-blur-sm">
-              <h3 className="text-lg font-bold mb-2" style={{ color: "#18230F" }}>Active Sessions & Logged-in Devices</h3>
-              <p className="text-sm mb-4" style={{ color: "#255F38" }}>
+              <h3 className="text-lg font-bold mb-1" style={{ color: "#18230F" }}>Active Sessions & Logged-in Devices</h3>
+              <p className="text-sm mb-6" style={{ color: "#255F38" }}>
                 Manage all active session logins for this account. Revoke any session to sign out that device.
               </p>
-
-              {sessions.length > 1 && (
-                <div className="mb-3">
-                  <button
-                    onClick={handleRevokeOthers}
-                    className="py-1.5 px-3.5 rounded-lg font-bold text-2xs transition-all duration-300 transform hover:scale-[0.98] cursor-pointer border border-red-300 bg-white text-red-600 hover:bg-red-50 shadow-sm"
-                  >
-                    Remove all except current device
-                  </button>
-                </div>
-              )}
 
               {isLoadingSessions ? (
                 <p className="text-xs animate-pulse font-semibold" style={{ color: "#255F38" }}>Loading active sessions...</p>
               ) : sessions.length === 0 ? (
                 <p className="text-xs font-semibold" style={{ color: "#255F38" }}>No active sessions found.</p>
               ) : (
-                <div className="space-y-2">
-                  {sessions.map((s) => (
-                    <div
-                      key={s.id}
-                      className="p-3 rounded-lg flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 transition-all duration-300 border border-white/30"
-                      style={{ backgroundColor: s.isCurrent ? "#DDF6D2" : "#ECFAE5" }}
-                    >
-                      <div className="space-y-1">
-                        <div className="flex items-center space-x-2">
-                          <span className="text-xs font-semibold text-[#18230F]">
-                            Session: {s.userAgent} — {s.ipAddress}
-                          </span>
-                          {s.isCurrent && (
-                            <span className="px-2 py-0.5 rounded-full text-4xs font-extrabold bg-[#255F38] text-[#ECFAE5] uppercase tracking-wider">
-                              Current Device
-                            </span>
+                <div className="space-y-6">
+                  {/* GROUP 1: This Device */}
+                  {(() => {
+                    const currentSession = sessions.find(s => s.isCurrent);
+                    if (!currentSession) return null;
+                    return (
+                      <div className="space-y-3">
+                        <h4 className="text-xs font-bold uppercase tracking-wider text-[#255F38] pl-0.5">This Device</h4>
+                        <div
+                          className="p-3.5 rounded-xl border border-[#CAE8BD] flex items-center justify-between gap-4 transition-all duration-300"
+                          style={{ backgroundColor: "#DDF6D2" }}
+                        >
+                          <div className="flex items-center space-x-3.5">
+                            <div className="p-2 rounded-lg bg-white/60 border border-white/40 shadow-2xs">
+                              {getDeviceIcon(currentSession.userAgent)}
+                            </div>
+                            <div>
+                              <p className="text-sm font-bold text-[#18230F]">
+                                {currentSession.userAgent}
+                              </p>
+                              <p className="text-3xs text-gray-500 font-bold mt-0.5">
+                                {currentSession.ipAddress} • Created: {formatDate(currentSession.createdAt)}
+                              </p>
+                            </div>
+                          </div>
+
+                          <button
+                            onClick={() => handleRevokeSession(currentSession.id)}
+                            className="py-1.5 px-4 rounded-lg font-bold text-2xs transition-all duration-300 transform hover:scale-[0.98] cursor-pointer shadow-sm text-white bg-red-600 hover:bg-red-700"
+                          >
+                            Log Out
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })()}
+
+                  {/* GROUP 2: Other Devices */}
+                  {(() => {
+                    const otherSessions = sessions.filter(s => !s.isCurrent);
+                    return (
+                      <div className="space-y-3">
+                        <div className="flex items-center justify-between">
+                          <h4 className="text-xs font-bold uppercase tracking-wider text-[#255F38] pl-0.5">Other Devices</h4>
+                          {otherSessions.length > 0 && (
+                            <button
+                              onClick={handleRevokeOthers}
+                              className="py-1 px-3 rounded-lg font-bold text-3xs transition-all duration-300 transform hover:scale-[0.98] cursor-pointer border border-red-300 bg-white hover:bg-red-50 text-red-600 shadow-sm"
+                            >
+                              Log out of all other devices
+                            </button>
                           )}
                         </div>
-                        <p className="text-3xs text-gray-500 font-semibold">
-                          Created: {formatDate(s.createdAt)}
-                        </p>
+
+                        {otherSessions.length === 0 ? (
+                          <p className="text-2xs text-[#255F38] italic font-bold pl-1">No other active devices logged in.</p>
+                        ) : (
+                          <div className="space-y-2.5">
+                            {otherSessions.map((s) => (
+                              <div
+                                key={s.id}
+                                className="p-3.5 rounded-xl border border-white/30 flex items-center justify-between gap-4 transition-all duration-300"
+                                style={{ backgroundColor: "#ECFAE5" }}
+                              >
+                                <div className="flex items-center space-x-3.5">
+                                  <div className="p-2 rounded-lg bg-white/60 border border-white/40 shadow-2xs">
+                                    {getDeviceIcon(s.userAgent)}
+                                  </div>
+                                  <div>
+                                    <p className="text-sm font-bold text-[#18230F]">
+                                      {s.userAgent}
+                                    </p>
+                                    <p className="text-3xs text-gray-500 font-bold mt-0.5">
+                                      {s.ipAddress} • Created: {formatDate(s.createdAt)}
+                                    </p>
+                                  </div>
+                                </div>
+
+                                <button
+                                  onClick={() => handleRevokeSession(s.id)}
+                                  className="py-1.5 px-4 rounded-lg font-bold text-2xs transition-all duration-300 transform hover:scale-[0.98] cursor-pointer border border-[#CAE8BD] text-[#18230F] bg-white hover:bg-[#ECFAE5] shadow-sm"
+                                >
+                                  Log Out
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        )}
                       </div>
-                      
-                      <button
-                        onClick={() => handleRevokeSession(s.id)}
-                        className="py-1 px-3 rounded-lg font-bold text-2xs transition-all duration-300 transform hover:scale-[0.98] cursor-pointer shadow-sm w-full sm:w-auto text-center"
-                        style={{
-                          backgroundColor: s.isCurrent ? "#DC2626" : "#FFF",
-                          color: s.isCurrent ? "#FFF" : "#DC2626",
-                          border: "1px solid #DC2626"
-                        }}
-                      >
-                        {s.isCurrent ? "Revoke & Log Out" : "Revoke Session"}
-                      </button>
-                    </div>
-                  ))}
+                    );
+                  })()}
                 </div>
               )}
             </div>
