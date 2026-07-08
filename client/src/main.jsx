@@ -6,72 +6,23 @@ import { AuthProvider } from "@custom-auth/react";
 import router from "./router/index.jsx";
 import "./index.css";
 
-// Global fetch interceptor to support header-based authentication, bypassing third-party cookie blocking
-const originalFetch = window.fetch;
-window.fetch = async (resource, config = {}) => {
-  let url = typeof resource === 'string' ? resource : (resource.url || "");
-  const token = localStorage.getItem("authToken");
-  const apiUrl = import.meta.env.VITE_API_URL || "/api/auth";
-  const isTargetApi = url.includes(apiUrl);
-
-  let updatedResource = resource;
-  let updatedConfig = { ...config };
-
-  if (token && isTargetApi) {
-    // Append token as query parameter to bypass Vercel header stripping
-    const separator = url.includes("?") ? "&" : "?";
-    const newUrl = `${url}${separator}token=${encodeURIComponent(token)}`;
-    if (typeof resource === 'string') {
-      updatedResource = newUrl;
-    } else {
-      updatedResource = new Request(newUrl, resource);
-    }
-
-    if (!updatedConfig.headers) {
-      updatedConfig.headers = {};
-    }
-
-    const headers = updatedConfig.headers;
-    if (headers instanceof Headers) {
-      if (!headers.has("Authorization")) {
-        headers.set("Authorization", `Bearer ${token}`);
-      }
-    } else if (Array.isArray(headers)) {
-      const hasAuth = headers.some(([k]) => k.toLowerCase() === 'authorization');
-      if (!hasAuth) {
-        headers.push(["Authorization", `Bearer ${token}`]);
-      }
-    } else {
-      updatedConfig.headers = { ...headers };
-      const hasAuth = Object.keys(updatedConfig.headers).some(k => k.toLowerCase() === 'authorization');
-      if (!hasAuth) {
-        updatedConfig.headers["Authorization"] = `Bearer ${token}`;
-      }
-    }
-  }
-
-  const response = await originalFetch(updatedResource, updatedConfig);
-
-  if (response.ok && isTargetApi) {
-    if (url.includes("/logout")) {
-      localStorage.removeItem("authToken");
-    } else {
-      const clone = response.clone();
-      try {
-        const data = await clone.json();
-        if (data && data.token) {
-          localStorage.setItem("authToken", data.token);
-        }
-      } catch (e) {}
-    }
-  }
-
-  return response;
-};
-
+/**
+ * v1.0.17: AuthProvider now accepts a `tokenStorage` prop.
+ * - 'localStorage' — token is stored in localStorage and sent via Authorization header.
+ *   Works around third-party cookie blocking (e.g. Safari ITP, Brave).
+ * - 'cookie'       — traditional httpOnly cookie flow (default).
+ *
+ * We use 'localStorage' so the token survives cross-site Vercel deployments
+ * where third-party cookies are blocked. The global fetch interceptor in the
+ * custom-auth/react library handles injecting the Authorization header.
+ * The server still sets httpOnly cookies as a secondary mechanism.
+ */
 createRoot(document.getElementById("root")).render(
   <StrictMode>
-    <AuthProvider apiBaseUrl={import.meta.env.VITE_API_URL}>
+    <AuthProvider
+      apiBaseUrl={import.meta.env.VITE_API_URL}
+      tokenStorage="localStorage"
+    >
       <RouterProvider router={router} />
     </AuthProvider>
   </StrictMode>

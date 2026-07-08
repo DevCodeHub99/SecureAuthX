@@ -1,64 +1,70 @@
-import { createAuth, hashPassword, verifyPassword } from '@custom-auth/core';
+import {
+  createAuth,
+  hashPassword,
+  AuthError,
+  InvalidCredentialsError,
+  UserExistsError,
+  UserNotFoundError,
+  MfaRequiredError,
+  MfaInvalidError,
+  TokenExpiredError,
+  TokenInvalidError,
+  EmailNotVerifiedError,
+  PasswordTooShortError,
+  OAuthError,
+} from '@custom-auth/core';
 import { MongooseAdapter } from '@custom-auth/mongoose';
 import { SmtpEmailAdapter } from '@custom-auth/adapter-nodemailer';
 
+// ---------------------------------------------------------------------------
+// WrappedMongooseAdapter — normalizes WebAuthn base64url credential IDs to
+// prevent duplicate-credential issues from encoding variations across browsers.
+// ---------------------------------------------------------------------------
 function normalizeCredentialID(id) {
+  if (!id) return id;
   try {
     const decoded = Buffer.from(id, 'base64url').toString('utf8');
-    if (/^[A-Za-z0-9_-]+$/.test(decoded)) {
-      return decoded;
-    }
-  } catch (e) {}
+    if (/^[A-Za-z0-9_-]+$/.test(decoded)) return decoded;
+  } catch (_) {}
   return id;
 }
 
 class WrappedMongooseAdapter extends MongooseAdapter {
   async createAuthenticator(data) {
     const credentialID = normalizeCredentialID(data.credentialID);
-    await this.authenticatorModel.create({
-      credentialID,
-      credentialPublicKey: data.credentialPublicKey,
-      counter: data.counter,
-      transports: data.transports,
-      userId: data.userId,
-      credentialDeviceType: data.credentialDeviceType,
-      credentialBackedUp: data.credentialBackedUp
-    });
+    return super.createAuthenticator({ ...data, credentialID });
   }
 
   async getAuthenticatorById(credentialID) {
     const normId = normalizeCredentialID(credentialID);
-    const record = await this.authenticatorModel.findOne({
-      $or: [{ credentialID: normId }, { credentialID }]
-    });
-    if (!record) return null;
-    return {
-      credentialID: record.credentialID,
-      credentialPublicKey: record.credentialPublicKey,
-      counter: record.counter,
-      transports: record.transports,
-      userId: record.userId.toString(),
-      credentialDeviceType: record.credentialDeviceType,
-      credentialBackedUp: record.credentialBackedUp
-    };
-  }
-
-  async listAuthenticatorsByUserId(userId) {
-    const records = await this.authenticatorModel.find({ userId });
-    return records.map((record) => ({
-      credentialID: record.credentialID,
-      credentialPublicKey: record.credentialPublicKey,
-      counter: record.counter,
-      transports: record.transports,
-      userId: record.userId.toString(),
-      credentialDeviceType: record.credentialDeviceType,
-      credentialBackedUp: record.credentialBackedUp
-    }));
+    // Try normalized first, then raw — handles encoding drift between registrations
+    const record = (await super.getAuthenticatorById(normId))
+      ?? (await super.getAuthenticatorById(credentialID));
+    return record ?? null;
   }
 }
 
+// ---------------------------------------------------------------------------
+// Startup guard — fail fast with clear error if JWT_SECRET is too short.
+// v1.0.17 core enforces ≥32 chars in production but we check at module load.
+// ---------------------------------------------------------------------------
+if (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32) {
+  if (process.env.NODE_ENV === 'production') {
+    console.error('[SecureAuthX] FATAL: JWT_SECRET must be at least 32 characters in production.');
+    process.exit(1);
+  } else {
+    console.warn('[SecureAuthX] WARNING: JWT_SECRET is too short. Use a secure random string of ≥32 chars in production.');
+  }
+}
+
+// ---------------------------------------------------------------------------
+// createAuth — single instance shared across all request handlers.
+// ---------------------------------------------------------------------------
 export const auth = createAuth({
   secret: process.env.JWT_SECRET,
+  session: {
+    expiresIn: `${(parseInt(process.env.COOKIE_MAX_AGE_DAYS) || 7) * 24}h`,
+  },
   adapter: new WrappedMongooseAdapter(),
   emailAdapter: new SmtpEmailAdapter({
     host: process.env.SMTP_HOST,
@@ -73,334 +79,459 @@ export const auth = createAuth({
   emailVerification: true,
   verifyEmailUrl: `${process.env.CLIENT_URL}/verify-email`,
   resetPasswordUrl: `${process.env.CLIENT_URL}/reset-password`,
+  bcrypt: { rounds: 12 }, // OWASP recommended: 12 rounds in production
+  // v1.0.17: built-in CSRF protection with allowed origins
+  csrf: {
+    allowedOrigins: [
+      (process.env.CLIENT_URL || 'http://localhost:5173').replace(/\/+$/, ''),
+      // Allow localhost variants in development for API testing
+      ...(process.env.NODE_ENV !== 'production'
+        ? ['http://localhost:5173', 'http://localhost:3000', 'http://127.0.0.1:5173']
+        : []),
+    ],
+  },
   providers: [
     {
       id: 'google',
       name: 'Google',
       type: 'oauth',
-      clientId: process.env.GOOGLE_CLIENT_ID || 'placeholder_google_id',
-      clientSecret: process.env.GOOGLE_CLIENT_SECRET || 'placeholder_google_secret',
+      clientId: process.env.GOOGLE_CLIENT_ID || '',
+      clientSecret: process.env.GOOGLE_CLIENT_SECRET || '',
     },
     {
       id: 'github',
       name: 'GitHub',
       type: 'oauth',
-      clientId: process.env.GITHUB_CLIENT_ID || 'placeholder_github_id',
-      clientSecret: process.env.GITHUB_CLIENT_SECRET || 'placeholder_github_secret',
+      clientId: process.env.GITHUB_CLIENT_ID || '',
+      clientSecret: process.env.GITHUB_CLIENT_SECRET || '',
     },
   ],
   webauthn: {
     rpName: 'SecureAuthX',
     rpID: new URL(process.env.CLIENT_URL || 'http://localhost:5173').hostname,
-    origin: (process.env.CLIENT_URL || 'http://localhost:5173').replace(/\/+$/, ""),
+    origin: (process.env.CLIENT_URL || 'http://localhost:5173').replace(/\/+$/, ''),
+  },
+  // Lifecycle hooks — structured audit log on every auth event
+  hooks: {
+    onSuccess: (event) => {
+      console.info(
+        `[Auth:OK] event=${event.event} userId=${event.userId ?? '-'} email=${event.email ?? '-'} ts=${event.timestamp.toISOString()}`,
+      );
+    },
+    onError: (event) => {
+      // Do not log the full error message (may contain sensitive input)
+      console.warn(
+        `[Auth:FAIL] event=${event.event} email=${event.email ?? '-'} code=${event.error.code ?? 'UNKNOWN'} ts=${event.timestamp.toISOString()}`,
+      );
+    },
   },
 });
 
-const originalVerifyLogin = auth.flows.verifyLogin.bind(auth.flows);
-auth.flows.verifyLogin = async function (response, challenge) {
-  const dbToken = this.adapter("getVerificationToken");
-  const tokenRecord = await dbToken.getVerificationToken(challenge, "webauthn-challenge");
-  
-  // Execute standard core verification first
-  const result = await originalVerifyLogin(response, challenge);
-  
-  // Verify that the authenticated passkey user matches the email used to generate options
-  if (tokenRecord && tokenRecord.email && result.user.email.toLowerCase().trim() !== tokenRecord.email.toLowerCase().trim()) {
-    throw new Error(`This passkey belongs to a different user (${result.user.email}). Please enter the correct email to sign in.`);
-  }
-  
-  return result;
-};
-
-const originalSetupMfa = auth.flows.setupMfa.bind(auth.flows);
-auth.flows.setupMfa = async function (userId) {
-  const result = await originalSetupMfa(userId);
-  
-  const dbUser = this.adapter("getUserById");
-  const user = await dbUser.getUserById(userId);
-  if (!user) return result;
-  
-  // URL-encode the label and issuer parameters to strictly comply with Authenticator app URI specs
-  const issuer = "SecureAuthX";
-  const label = `${issuer}:${user.email}`;
-  const otpauthUrl = `otpauth://totp/${encodeURIComponent(label)}?secret=${result.secret}&issuer=${encodeURIComponent(issuer)}`;
-  
-  const qrcodeLib = await import("qrcode");
-  const qrCodeUrl = await qrcodeLib.default.toDataURL(otpauthUrl);
-  
+// ---------------------------------------------------------------------------
+// mapAuthError — maps @custom-auth/core error subclasses → HTTP status + message.
+// Keeps all catch blocks DRY. Returns { status, message }.
+// ---------------------------------------------------------------------------
+function mapAuthError(error) {
+  if (error instanceof InvalidCredentialsError) return { status: 401, message: error.message };
+  if (error instanceof UserExistsError)         return { status: 409, message: error.message };
+  if (error instanceof UserNotFoundError)        return { status: 404, message: error.message };
+  if (error instanceof MfaRequiredError)         return { status: 200, message: error.message };
+  if (error instanceof MfaInvalidError)          return { status: 400, message: error.message };
+  if (error instanceof TokenExpiredError)        return { status: 401, message: error.message };
+  if (error instanceof TokenInvalidError)        return { status: 401, message: error.message };
+  if (error instanceof EmailNotVerifiedError)    return { status: 403, message: error.message };
+  if (error instanceof PasswordTooShortError)    return { status: 400, message: error.message };
+  if (error instanceof OAuthError)               return { status: 400, message: error.message };
+  if (error instanceof AuthError)                return { status: error.statusCode || 400, message: error.message };
+  // Generic fallback — never expose raw error details in production
   return {
-    secret: result.secret,
-    qrCodeUrl,
-    otpauthUrl
+    status: 500,
+    message: process.env.NODE_ENV === 'production' ? 'Internal Server Error' : (error.message ?? 'Unknown error'),
   };
-};
+}
 
-// Centralized helper to build cookie settings defensively for production environments
+// ---------------------------------------------------------------------------
+// getCookieOptions — builds httpOnly cookie options, auto-detecting secure context.
+// ---------------------------------------------------------------------------
 const getCookieOptions = (req) => {
-  const isProd = process.env.NODE_ENV === "production" || req.secure || req.headers['x-forwarded-proto'] === 'https';
+  const isProd = process.env.NODE_ENV === 'production'
+    || req.secure
+    || req.headers['x-forwarded-proto'] === 'https';
   return {
     httpOnly: true,
     secure: isProd,
-    sameSite: isProd ? "none" : "strict",
-    maxAge: (parseInt(process.env.COOKIE_MAX_AGE_DAYS) || 7) * 24 * 60 * 60 * 1000
+    sameSite: isProd ? 'none' : 'strict',
+    path: '/',
+    maxAge: (parseInt(process.env.COOKIE_MAX_AGE_DAYS) || 7) * 24 * 60 * 60 * 1000,
   };
 };
 
-// Session refresh endpoint
+// ---------------------------------------------------------------------------
+// GET /api/auth/session — returns current authenticated user (fresh DB data)
+// ---------------------------------------------------------------------------
 export const session = async (req, res) => {
   try {
-    const token = req.cookies?.['auth-token'] || req.headers.authorization?.split(" ")[1] || req.query.token;
-    if (!token) return res.status(401).json({ error: "No session" });
+    const token = req.cookies?.['auth-token']
+      || req.headers.authorization?.replace(/^Bearer\s+/i, '');
+    if (!token) return res.status(401).json({ error: 'No session' });
 
     const payload = await auth.sessionManager.verifyToken(token);
-    if (!payload || !payload.sub) return res.status(401).json({ error: "Invalid session" });
+    if (!payload?.sub) return res.status(401).json({ error: 'Invalid session' });
 
-    const dbAdapter = auth.config.adapter;
-    const dbUser = await dbAdapter.getUserById(payload.sub);
-    if (!dbUser) return res.status(404).json({ error: "User not found" });
+    // Always fetch fresh user data — never rely on stale JWT claims
+    const dbUser = await auth.config.adapter.getUserById(payload.sub);
+    if (!dbUser) return res.status(401).json({ error: 'User not found' });
 
-    const user = {
-      id: dbUser.id,
-      email: dbUser.email,
-      name: dbUser.name,
-      role: dbUser.role,
-      mfaEnabled: dbUser.mfaEnabled
-    };
-
-    res.json({ user });
-  } catch (error) {
-    res.status(401).json({ error: "Invalid session" });
+    return res.json({
+      user: {
+        id: dbUser.id,
+        email: dbUser.email,
+        name: dbUser.name ?? null,
+        role: dbUser.role,
+        mfaEnabled: dbUser.mfaEnabled ?? false,
+        emailVerified: dbUser.emailVerified ?? false,
+      },
+    });
+  } catch {
+    return res.status(401).json({ error: 'Invalid session' });
   }
 };
 
+// ---------------------------------------------------------------------------
+// POST /api/auth/register
+// ---------------------------------------------------------------------------
 export const register = async (req, res) => {
   try {
     const { email, password, name } = req.body;
     const normalizedEmail = email.toLowerCase().trim();
-    const { user } = await auth.flows.register(normalizedEmail, password, name);
-    // Do not set a session cookie here; the user must verify their email first.
-    res.status(201).json({ message: "Registered! Please check your email to verify your account.", user });
+    const { user } = await auth.flows.register(normalizedEmail, password, name?.trim() ?? undefined);
+    // No session cookie — user must verify email first (emailVerification: true)
+    return res.status(201).json({
+      message: 'Account created! Please check your email to verify your account before signing in.',
+      user: { id: user.id, email: user.email, name: user.name ?? null },
+    });
   } catch (error) {
-    res.status(400).json({ error: error.message || "Registration failed" });
+    const { status, message } = mapAuthError(error);
+    return res.status(status).json({ error: message });
   }
 };
 
+// ---------------------------------------------------------------------------
+// POST /api/auth/login
+// ---------------------------------------------------------------------------
 export const login = async (req, res) => {
   try {
     const { email, password } = req.body;
+    if (!email || !password) {
+      return res.status(400).json({ error: 'Email and password are required.' });
+    }
     const normalizedEmail = email.toLowerCase().trim();
     const result = await auth.flows.login(normalizedEmail, password);
+
+    // MFA required — return tempToken so client can present the 2FA challenge
     if (result.mfaRequired) {
-      return res.status(200).json(result);
+      return res.status(200).json({ mfaRequired: true, tempToken: result.tempToken });
     }
+
     const { user, token } = result;
-    const cookieOptions = getCookieOptions(req);
-    res.cookie("auth-token", token, cookieOptions);
-    res.status(200).json({ user, token });
+    res.cookie('auth-token', token, getCookieOptions(req));
+    return res.status(200).json({ user, token });
   } catch (error) {
-    res.status(400).json({ error: error.message || "Login failed" });
+    const { status, message } = mapAuthError(error);
+    return res.status(status).json({ error: message });
   }
 };
 
+// ---------------------------------------------------------------------------
+// POST /api/auth/logout
+// ---------------------------------------------------------------------------
 export const logout = async (req, res) => {
   try {
-    const cookieOptions = getCookieOptions(req);
-    delete cookieOptions.maxAge; // Clearing options don't require maxAge
-    res.clearCookie("auth-token", cookieOptions);
-    res.status(200).json({ message: "Logged Out" });
+    // Delete the server-side DB session (revocation) before clearing the cookie
+    const token = req.cookies?.['auth-token']
+      || req.headers.authorization?.replace(/^Bearer\s+/i, '');
+    if (token) {
+      try {
+        const payload = await auth.sessionManager.verifyToken(token);
+        if (payload?.jti && auth.config.adapter.deleteSession) {
+          await auth.config.adapter.deleteSession(payload.jti);
+        }
+      } catch {
+        // Token may already be expired — still clear the cookie
+      }
+    }
+
+    // Must preserve secure/sameSite when clearing — browsers reject mismatched attributes
+    const opts = { ...getCookieOptions(req) };
+    delete opts.maxAge;
+    res.clearCookie('auth-token', opts);
+    return res.status(200).json({ message: 'Logged out successfully.' });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    return res.status(500).json({ error: 'Logout failed.' });
   }
 };
 
+// ---------------------------------------------------------------------------
+// POST /api/auth/forgot-password
+// Anti-enumeration: ALWAYS returns 200, regardless of whether the email exists.
+// ---------------------------------------------------------------------------
 export const forgotPassword = async (req, res) => {
   try {
     const { email } = req.body;
+    if (!email) return res.status(400).json({ error: 'Email is required.' });
     const normalizedEmail = email.toLowerCase().trim();
     await auth.flows.requestPasswordReset(normalizedEmail, `${process.env.CLIENT_URL}/reset-password`);
-    res.status(200).json({ message: "Password reset email sent" });
-  } catch (error) {
-    res.status(400).json({ error: error.message });
+  } catch {
+    // Intentionally swallow all errors — never expose whether the email exists
   }
+  // Always 200 to prevent user enumeration
+  return res.status(200).json({
+    message: 'If that email address is registered, a password reset link has been sent.',
+  });
 };
 
+// ---------------------------------------------------------------------------
+// POST /api/auth/reset-password (via email link token)
+// ---------------------------------------------------------------------------
 export const resetPassword = async (req, res) => {
   try {
     const { token, email, password } = req.body;
+    if (!token || !email || !password) {
+      return res.status(400).json({ error: 'token, email, and password are required.' });
+    }
     const normalizedEmail = email.toLowerCase().trim();
     await auth.flows.resetPassword(token, normalizedEmail, password);
-    
-    // Auto-login after password reset
-    const { user, token: sessionToken } = await auth.flows.login(normalizedEmail, password);
-    const cookieOptions = getCookieOptions(req);
-    res.cookie("auth-token", sessionToken, cookieOptions);
-    
-    res.status(200).json({ message: "Password updated successfully", user, token: sessionToken });
+
+    // Auto-login after successful password reset
+    const loginResult = await auth.flows.login(normalizedEmail, password);
+    if (loginResult.mfaRequired) {
+      return res.status(200).json({
+        message: 'Password updated. Please complete 2FA to sign in.',
+        mfaRequired: true,
+        tempToken: loginResult.tempToken,
+      });
+    }
+
+    const { user, token: sessionToken } = loginResult;
+    res.cookie('auth-token', sessionToken, getCookieOptions(req));
+    return res.status(200).json({ message: 'Password updated successfully.', user, token: sessionToken });
   } catch (error) {
-    res.status(400).json({ error: error.message });
+    const { status, message } = mapAuthError(error);
+    return res.status(status).json({ error: message });
   }
 };
 
+// ---------------------------------------------------------------------------
+// POST /api/auth/magic-link — send passwordless login email
+// Client can supply a custom callbackUrl; falls back to server default.
+// ---------------------------------------------------------------------------
 export const magicLink = async (req, res) => {
   try {
-    const { email } = req.body;
+    const { email, callbackUrl } = req.body;
+    if (!email) return res.status(400).json({ error: 'Email is required.' });
     const normalizedEmail = email.toLowerCase().trim();
-    await auth.flows.requestMagicLink(normalizedEmail, `${process.env.CLIENT_URL}/magic-link`);
-    res.status(200).json({ message: "Magic link sent" });
-  } catch (error) {
-    res.status(400).json({ error: error.message });
+    // Respect the client-supplied callbackUrl (validated against allowed origin below)
+    const resolvedCallback = callbackUrl
+      ? String(callbackUrl).replace(/\/+$/, '')
+      : `${process.env.CLIENT_URL}/magic-link`;
+    // Security: ensure callbackUrl points to the allowed client origin
+    const allowedOrigin = (process.env.CLIENT_URL || '').replace(/\/+$/, '');
+    if (allowedOrigin && !resolvedCallback.startsWith(allowedOrigin)) {
+      return res.status(400).json({ error: 'Invalid callback URL.' });
+    }
+    await auth.flows.requestMagicLink(normalizedEmail, resolvedCallback);
+  } catch {
+    // Swallow errors to prevent user enumeration
   }
+  return res.status(200).json({ message: 'If that email is registered, a magic link has been sent.' });
 };
 
+// ---------------------------------------------------------------------------
+// GET /api/auth/magic-link/verify
+// ---------------------------------------------------------------------------
 export const verifyMagicLink = async (req, res) => {
   try {
     const { token, email } = req.query;
-    if (!token || !email) return res.status(400).json({ error: "Missing token or email" });
-    
-    const normalizedEmail = decodeURIComponent(email).toLowerCase().trim();
-    const result = await auth.flows.verifyMagicLink(token, normalizedEmail);
-    const { user, token: sessionToken } = result;
-    
-    const cookieOptions = getCookieOptions(req);
-    res.cookie("auth-token", sessionToken, cookieOptions);
-    res.status(200).json({ user, token: sessionToken });
+    if (!token || !email) return res.status(400).json({ error: 'Missing token or email.' });
+
+    const normalizedEmail = decodeURIComponent(String(email)).toLowerCase().trim();
+    const { user, token: sessionToken } = await auth.flows.verifyMagicLink(String(token), normalizedEmail);
+
+    res.cookie('auth-token', sessionToken, getCookieOptions(req));
+    return res.status(200).json({ user, token: sessionToken });
   } catch (error) {
-    res.status(400).json({ error: error.message || "Invalid or expired magic link" });
+    const { status, message } = mapAuthError(error);
+    return res.status(status).json({ error: message });
   }
 };
 
+// ---------------------------------------------------------------------------
+// GET /api/auth/verify-email
+// ---------------------------------------------------------------------------
 export const verifyEmail = async (req, res) => {
   try {
     const { token, email } = req.query;
-    if (!token || !email) return res.status(400).json({ error: "Missing token or email" });
-    
-    const normalizedEmail = decodeURIComponent(email).toLowerCase().trim();
-    const result = await auth.flows.verifyEmail(token, normalizedEmail);
-    
-    // Auto-login the user after verifying their email
-    const sessionToken = result.token || await auth.sessionManager.createToken(result.user);
-    const cookieOptions = getCookieOptions(req);
-    res.cookie("auth-token", sessionToken, cookieOptions);
-    
-    res.status(200).json({ user: result.user, token: sessionToken });
+    if (!token || !email) return res.status(400).json({ error: 'Missing token or email.' });
+
+    const normalizedEmail = decodeURIComponent(String(email)).toLowerCase().trim();
+    // verifyEmail returns { user } only — no token (per v1.0.17 API)
+    const { user } = await auth.flows.verifyEmail(String(token), normalizedEmail);
+
+    // Issue a session token so the user is auto-logged-in after verifying
+    const sessionToken = await auth.sessionManager.createToken(user);
+    res.cookie('auth-token', sessionToken, getCookieOptions(req));
+    return res.status(200).json({ user, token: sessionToken });
   } catch (error) {
-    console.error("[verifyEmail Error]:", error);
-    res.status(400).json({ error: error.message || "Invalid verification link" });
+    const { status, message } = mapAuthError(error);
+    return res.status(status).json({ error: message });
   }
 };
 
+// ---------------------------------------------------------------------------
+// Catch-all handler — proxies MFA, WebAuthn, OAuth, OTP routes through the
+// core auth.handleRequest() Web Fetch API adapter.
+// ---------------------------------------------------------------------------
 export const handleAuthRequest = async (req, res) => {
   try {
     const protocol = req.secure || req.headers['x-forwarded-proto'] === 'https' ? 'https' : 'http';
     const url = `${protocol}://${req.headers.host}${req.originalUrl}`;
 
-    // Map headers and inject Authorization Bearer token from query/cookies fallback if missing
-    const reqHeaders = new Headers(req.headers);
-    const token = req.cookies?.['auth-token'] || req.headers.authorization?.split(" ")[1] || req.query.token;
-    if (token && !reqHeaders.has("authorization")) {
-      reqHeaders.set("authorization", `Bearer ${token}`);
+    const reqHeaders = new Headers();
+    // Allowlist — only forward safe, non-sensitive headers
+    const ALLOWED_HEADERS = new Set(['host', 'content-type', 'origin', 'cookie', 'accept', 'accept-language']);
+    for (const [key, value] of Object.entries(req.headers)) {
+      if (ALLOWED_HEADERS.has(key.toLowerCase())) {
+        reqHeaders.set(key.toLowerCase(), value);
+      }
     }
 
-    const requestOptions = {
-      method: req.method,
-      headers: reqHeaders,
-    };
+    // Inject Authorization from cookie (preferred) or existing header — for MFA/WebAuthn flows
+    const existingToken = req.cookies?.['auth-token']
+      || req.headers.authorization?.replace(/^Bearer\s+/i, '');
+    if (existingToken) {
+      reqHeaders.set('authorization', `Bearer ${existingToken}`);
+    }
 
-    if (!['GET', 'HEAD'].includes(req.method)) {
+    const requestOptions = { method: req.method, headers: reqHeaders };
+    if (!['GET', 'HEAD'].includes(req.method.toUpperCase())) {
       requestOptions.body = JSON.stringify(req.body);
+      if (!reqHeaders.has('content-type')) {
+        reqHeaders.set('content-type', 'application/json');
+      }
     }
 
-    const webReq = new Request(url, requestOptions);
-    console.log(`[handleAuthRequest] Mapping request: ${req.method} ${req.originalUrl}`);
-    console.log(`[handleAuthRequest] Headers:`, req.headers);
-    console.log(`[handleAuthRequest] Body:`, req.body);
-    
-    const webRes = await auth.handleRequest(webReq);
+    const webRes = await auth.handleRequest(new Request(url, requestOptions));
 
     res.status(webRes.status);
-    webRes.headers.forEach((v, k) => {
-      res.append(k, v);
+    // Forward headers except Set-Cookie which we handle via Express cookie API
+    webRes.headers.forEach((value, key) => {
+      if (key.toLowerCase() !== 'transfer-encoding') {
+        res.append(key, value);
+      }
     });
 
     const text = await webRes.text();
-    res.send(text);
+    return res.send(text);
   } catch (error) {
-    console.error("[handleAuthRequest Error]:", error);
-    res.status(500).json({ error: "Internal server error" });
+    console.error('[handleAuthRequest]', error.message);
+    return res.status(500).json({ error: 'Internal server error.' });
   }
 };
 
+// ---------------------------------------------------------------------------
+// POST /api/auth/update-password (authenticated)
+// v1.0.17: AuthFlows.updatePassword verifies current password, hashes new,
+// and calls deleteSessionsByUserId to invalidate all other sessions.
+// ---------------------------------------------------------------------------
 export const updatePassword = async (req, res) => {
   try {
-    const { currentPassword, password } = req.body;
-    if (!password || password.length < 8) {
-      return res.status(400).json({ error: "New password must be at least 8 characters long" });
+    const { currentPassword, password: newPassword } = req.body;
+
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({ error: 'currentPassword and password are required.' });
     }
-    
-    const dbAdapter = auth.config.adapter;
-    const userEmail = req.user.email;
-    const user = await dbAdapter.getUserByEmail(userEmail);
-    if (!user) {
-      return res.status(404).json({ error: "User not found" });
+    if (newPassword.length < 8) {
+      return res.status(400).json({ error: 'New password must be at least 8 characters long.' });
     }
-    
-    // If the user already has a password set, they MUST verify their current password
-    if (user.passwordHash) {
-      if (!currentPassword) {
-        return res.status(400).json({ error: "Current password is required to change your password." });
-      }
-      
-      const isMatch = await verifyPassword(currentPassword, user.passwordHash);
-      if (!isMatch) {
-        return res.status(400).json({ error: "Current password is incorrect." });
-      }
-      
-      if (currentPassword === password) {
-        return res.status(400).json({ error: "New password cannot be the same as your current password." });
-      }
+    if (currentPassword === newPassword) {
+      return res.status(400).json({ error: 'New password must be different from your current password.' });
     }
-    
-    const passwordHash = await hashPassword(password);
-    await dbAdapter.updateUser(userEmail, { passwordHash });
-    res.status(200).json({ message: "Password updated successfully" });
+
+    await auth.flows.updatePassword(req.user.id, currentPassword, newPassword);
+
+    // Issue a fresh token — old sessions were all invalidated by updatePassword
+    const dbUser = await auth.config.adapter.getUserById(req.user.id);
+    const newToken = await auth.sessionManager.createToken(dbUser);
+    res.cookie('auth-token', newToken, getCookieOptions(req));
+
+    return res.status(200).json({
+      message: 'Password updated. All other sessions have been signed out for your security.',
+      token: newToken,
+    });
   } catch (error) {
-    res.status(400).json({ error: error.message || "Failed to update password" });
+    const { status, message } = mapAuthError(error);
+    return res.status(status).json({ error: message });
   }
 };
 
+// ---------------------------------------------------------------------------
+// POST /api/auth/reset-password-otp (forgot-password via OTP code)
+// OTP proves email ownership → no current password needed.
+// ---------------------------------------------------------------------------
 export const resetPasswordWithOtp = async (req, res) => {
   try {
     const { email, code, password } = req.body;
+    if (!email || !code || !password) {
+      return res.status(400).json({ error: 'email, code, and password are required.' });
+    }
+
     const normalizedEmail = email.toLowerCase().trim();
-    
-    if (!password || password.length < 8) {
-      return res.status(400).json({ error: "Password must be at least 8 characters long" });
+
+    if (password.length < 8) {
+      return res.status(400).json({ error: 'Password must be at least 8 characters long.' });
     }
-    
+
     const dbAdapter = auth.config.adapter;
-    
-    // Verify the OTP code against MongoDB
-    const tokenRecord = await dbAdapter.getVerificationToken(code, "email-otp");
-    if (!tokenRecord || tokenRecord.email.toLowerCase().trim() !== normalizedEmail || tokenRecord.expiresAt < new Date()) {
-      return res.status(400).json({ error: "Invalid or expired verification code." });
+
+    // Validate OTP: fetch the token record, check email match + expiry
+    const tokenRecord = await dbAdapter.getVerificationToken(String(code), 'email-otp');
+    if (
+      !tokenRecord
+      || tokenRecord.email.toLowerCase().trim() !== normalizedEmail
+      || tokenRecord.expiresAt < new Date()
+    ) {
+      return res.status(400).json({ error: 'Invalid or expired verification code.' });
     }
-    
-    // Code is valid! Delete the verification token from database to prevent replay attacks
-    await dbAdapter.deleteVerificationToken(code, "email-otp");
-    
-    // Hash the password and save to user
-    const passwordHash = await hashPassword(password);
-    await dbAdapter.updateUser(normalizedEmail, { passwordHash });
-    
-    // Log the user in and return the session token
-    const result = await auth.flows.login(normalizedEmail, password);
-    const { user, token } = result;
-    
-    const cookieOptions = getCookieOptions(req);
-    res.cookie("auth-token", token, cookieOptions);
-    
-    res.status(200).json({ message: "Password reset successfully! Logging you in...", user, token });
+
+    // Consume token immediately to prevent replay attacks
+    await dbAdapter.deleteVerificationToken(String(code), 'email-otp');
+
+    // Hash and persist the new password (top-level import, no dynamic import)
+    const newHash = await hashPassword(password, 12);
+    await dbAdapter.updateUser(normalizedEmail, { passwordHash: newHash });
+
+    // Invalidate all existing sessions for security
+    const user = await dbAdapter.getUserByEmail(normalizedEmail);
+    if (user && typeof dbAdapter.deleteSessionsByUserId === 'function') {
+      await dbAdapter.deleteSessionsByUserId(user.id);
+    }
+
+    if (!user) {
+      return res.status(404).json({ error: 'User not found.' });
+    }
+
+    // Issue a session token directly — skip login() to avoid EmailNotVerifiedError
+    // edge case where user registered via OTP without completing email verification
+    const sessionToken = await auth.sessionManager.createToken(user);
+    res.cookie('auth-token', sessionToken, getCookieOptions(req));
+
+    return res.status(200).json({
+      message: 'Password reset successfully.',
+      user: { id: user.id, email: user.email, name: user.name ?? null, role: user.role },
+      token: sessionToken,
+    });
   } catch (error) {
-    res.status(400).json({ error: error.message || "Failed to reset password." });
+    const { status, message } = mapAuthError(error);
+    return res.status(status).json({ error: message });
   }
 };

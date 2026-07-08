@@ -22,7 +22,7 @@ export default function ForgotPassword() {
 
   const { requestReset, isLoading: isResetLoading } = useForgotPassword(apiBaseUrl);
   const { requestOtp, isLoading: isOtpLoading } = useOtp(apiBaseUrl);
-  const { refresh } = useAuth();
+  const { refresh, setSession } = useAuth();
   const navigate = useNavigate();
 
   const handleSendResetLink = async () => {
@@ -89,6 +89,7 @@ export default function ForgotPassword() {
         throw new Error(data.error || "Failed to reset password.");
       }
 
+      setSession(data.user || null, data.token || null);
       setMessage("Password reset successfully! Logging you in...");
       await new Promise((resolve) => setTimeout(resolve, 150));
       await refresh(); // Refresh session context in state

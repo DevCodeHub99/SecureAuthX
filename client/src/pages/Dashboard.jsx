@@ -1,17 +1,21 @@
 import { useState } from "react";
-import { useSession, useSignOut, useMfa, usePasskeys, useAuth } from "@custom-auth/react";
+import { useSession, useSignOut, useMfa, usePasskeys, useAuth, useUpdatePassword } from "@custom-auth/react";
 import { useNavigate } from "react-router-dom";
 import logo from "../assets/secure-auth-x-logo.png";
 
 export default function Dashboard() {
   const apiBaseUrl = import.meta.env.VITE_API_URL;
   const { user, isLoading: isSessionLoading } = useSession();
-  const { signOut, isLoading: isSignOutLoading } = useSignOut(apiBaseUrl);
+  // v1.0.17: useSignOut takes NO arguments — reads apiBaseUrl from AuthProvider context
+  const { signOut, isLoading: isSignOutLoading } = useSignOut();
   const { refresh } = useAuth();
   
   // Custom-auth Hooks
   const { setupMfa, enableMfa, disableMfa, isLoading: isMfaLoading } = useMfa(apiBaseUrl);
   const { registerPasskey, isLoading: isPasskeyLoading } = usePasskeys(apiBaseUrl);
+  // v1.0.17: useUpdatePassword hook replaces manual fetch + hashing pattern.
+  // It delegates to AuthFlows.updatePassword which also calls deleteSessionsByUserId.
+  const { updatePassword, isLoading: isUpdatingPassword } = useUpdatePassword(apiBaseUrl);
   
   const navigate = useNavigate();
 
@@ -28,7 +32,6 @@ export default function Dashboard() {
   const [showCurrentPassword, setShowCurrentPassword] = useState(false);
   const [showNewPassword, setShowNewPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
-  const [isUpdatingPassword, setIsUpdatingPassword] = useState(false);
   const [mfaQrCode, setMfaQrCode] = useState("");
   const [mfaSecret, setMfaSecret] = useState("");
   
@@ -114,31 +117,20 @@ export default function Dashboard() {
       return;
     }
 
-    setIsUpdatingPassword(true);
     try {
-      const res = await fetch(`${apiBaseUrl}/update-password`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ 
-          currentPassword, 
-          password: newPassword 
-        }),
-        credentials: "include",
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error || "Failed to update password.");
-      }
-      setSuccess("Your password has been updated successfully!");
+      // v1.0.17: useUpdatePassword hook — delegates to AuthFlows.updatePassword
+      // which verifies current password, hashes new password, and invalidates all
+      // existing sessions via deleteSessionsByUserId for security.
+      await updatePassword(currentPassword, newPassword);
+      setSuccess("Your password has been updated successfully! Other active sessions have been invalidated.");
       setCurrentPassword("");
       setNewPassword("");
       setConfirmPassword("");
+      // Refresh session context to pick up the newly issued token from the server
+      await new Promise((resolve) => setTimeout(resolve, 150));
+      await refresh();
     } catch (err) {
-      setError(err.message);
-    } finally {
-      setIsUpdatingPassword(false);
+      setError(err.message || "Failed to update password.");
     }
   };
 
@@ -146,9 +138,14 @@ export default function Dashboard() {
     setTestResult(null);
     try {
       const backendOrigin = import.meta.env.VITE_API_URL.replace('/api/auth', '');
+      // Include stored auth token in Authorization header for requireAuth middleware
+      const storedToken = localStorage.getItem('authToken');
+      const headers = { 'Content-Type': 'application/json' };
+      if (storedToken) headers['Authorization'] = `Bearer ${storedToken}`;
       const res = await fetch(`${backendOrigin}${path}`, {
         method: "GET",
         credentials: "include",
+        headers,
       });
       const data = await res.json();
       setTestResult({
@@ -504,7 +501,7 @@ export default function Dashboard() {
                 <button
                   type="submit"
                   disabled={isUpdatingPassword}
-                  className="w-full sm:w-auto px-6 py-2.5 rounded-full font-bold text-xs shadow hover:scale-[0.98] transition-all cursor-pointer"
+                  className="w-full sm:w-auto px-6 py-2.5 rounded-full font-bold text-xs shadow hover:scale-[0.98] transition-all cursor-pointer disabled:opacity-70"
                   style={{ background: "linear-gradient(135deg, #B0DB9C 0%, #CAE8BD 100%)", color: "#18230F" }}
                 >
                   {isUpdatingPassword ? "Updating..." : "Update Password"}

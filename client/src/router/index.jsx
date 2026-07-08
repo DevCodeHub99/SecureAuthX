@@ -33,11 +33,19 @@ const router = createBrowserRouter([
       },
       {
         path: "forgot-password",
-        element: <ForgotPassword />,
+        element: (
+          <AuthRoute>
+            <ForgotPassword />
+          </AuthRoute>
+        ),
       },
       {
         path: "reset-password",
-        element: <ResetPassword />,
+        element: (
+          <AuthRoute>
+            <ResetPassword />
+          </AuthRoute>
+        ),
       },
       {
         path: "verify-email",

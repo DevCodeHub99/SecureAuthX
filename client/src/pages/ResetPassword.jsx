@@ -17,10 +17,10 @@ export default function ResetPassword() {
   const [showNewPassword, setShowNewPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   
+  const apiBaseUrl = import.meta.env.VITE_API_URL;
   const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState(null);
   const [success, setSuccess] = useState(false);
-  const { refresh } = useAuth();
+  const { refresh, setSession } = useAuth();
 
   // If there's no token in the URL, the link is invalid
   const isInvalidLink = !token || !email;
@@ -40,31 +40,27 @@ export default function ResetPassword() {
     }
 
     setIsLoading(true);
-    setError(null);
     try {
-      const res = await fetch(`${import.meta.env.VITE_API_URL}/reset-password`, {
+      const res = await fetch(`${apiBaseUrl}/reset-password`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ token, email, password: newPassword }),
-        credentials: "include"
       });
-      
       const data = await res.json();
-      
       if (!res.ok) {
         throw new Error(data.error || "Password reset failed");
       }
       
+      setSession(data.user || null, data.token || null);
       setSuccess(true);
+      localStorage.removeItem("resetEmail");
       await new Promise((resolve) => setTimeout(resolve, 150));
       await refresh();
-      localStorage.removeItem("resetEmail");
       setTimeout(() => {
         navigate("/dashboard");
       }, 2000);
     } catch (err) {
-      console.error(err);
-      setError(err.message);
+      setValidationError(err.message || "Password reset failed");
     } finally {
       setIsLoading(false);
     }

@@ -8,7 +8,7 @@ export default function MagicLink() {
   const token = searchParams.get("token");
   const email = searchParams.get("email");
   const navigate = useNavigate();
-  const { refresh } = useAuth(); // Call refresh to update the session context after setting cookie
+  const { refresh, setSession } = useAuth(); // Call refresh and setSession to update the session context after setting token
 
   const [status, setStatus] = useState("verifying");
   const [error, setError] = useState(null);
@@ -38,7 +38,8 @@ export default function MagicLink() {
         }
 
         setStatus("success");
-        // Ensure the auth context picks up the new session cookie
+        // Ensure the auth context picks up the new session token
+        setSession(data.user || null, data.token || null);
         await new Promise((resolve) => setTimeout(resolve, 150));
         await refresh();
         
@@ -52,7 +53,7 @@ export default function MagicLink() {
     };
 
     verify();
-  }, [token, email, navigate, refresh]);
+  }, [token, email, navigate, refresh, setSession]);
 
   return (
     <div className="min-h-screen flex flex-col justify-center py-4" style={{ backgroundColor: "#ECFAE5" }}>

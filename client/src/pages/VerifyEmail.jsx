@@ -8,7 +8,7 @@ export default function VerifyEmail() {
   const token = searchParams.get("token");
   const email = searchParams.get("email");
   const navigate = useNavigate();
-  const { refresh } = useAuth();
+  const { refresh, setSession } = useAuth();
 
   const [status, setStatus] = useState("verifying");
   const [error, setError] = useState(null);
@@ -38,6 +38,7 @@ export default function VerifyEmail() {
         }
 
         setStatus("success");
+        setSession(data.user || null, data.token || null);
         await new Promise((resolve) => setTimeout(resolve, 150));
         await refresh();
         setTimeout(() => {
@@ -50,7 +51,7 @@ export default function VerifyEmail() {
     };
 
     verify();
-  }, [token, email, navigate]);
+  }, [token, email, navigate, refresh, setSession]);
 
   return (
     <div className="min-h-screen flex flex-col justify-center py-4" style={{ backgroundColor: "#ECFAE5" }}>

@@ -17,9 +17,9 @@
     "nodemon": "^3.1.10"
   },
   "dependencies": {
-    "@custom-auth/adapter-nodemailer": "^1.0.14",
-    "@custom-auth/core": "^1.0.14",
-    "@custom-auth/mongoose": "^1.0.14",
+    "@custom-auth/adapter-nodemailer": "^1.0.17",
+    "@custom-auth/core": "^1.0.17",
+    "@custom-auth/mongoose": "^1.0.17",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
     "dotenv": "^17.2.0",

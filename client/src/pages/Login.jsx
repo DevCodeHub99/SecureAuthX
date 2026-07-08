@@ -1,26 +1,36 @@
 import { useState, useEffect } from "react";
-import { useSignIn, useMagicLink, useSession, useAuth, usePasskeys, useOtp, useMfa } from "@custom-auth/react";
+import {
+  useSignIn,
+  useMagicLink,
+  useSession,
+  useAuth,
+  usePasskeys,
+  useOtp,
+  useMfa,
+} from "@custom-auth/react";
 import { Link, useNavigate } from "react-router-dom";
 import logo from "../assets/secure-auth-x-logo.png";
 
 export default function Login() {
   const apiBaseUrl = import.meta.env.VITE_API_URL;
-  
-  const { signIn } = useSignIn(apiBaseUrl);
+
+  // v1.0.17: useSignIn / useSignOut / useSignUp take NO arguments —
+  // they read apiBaseUrl from AuthProvider context internally.
+  const { signIn } = useSignIn();
   const { refresh } = useAuth();
+
+  // These hooks still accept apiBaseUrl (they call specific endpoints directly)
   const { requestMagicLink, isLoading: isMagicLinkLoading } = useMagicLink(apiBaseUrl);
   const { isAuthenticated, isLoading: sessionLoading } = useSession();
   const { loginWithPasskey, isLoading: isPasskeyLoading } = usePasskeys(apiBaseUrl);
-  
-  // Custom-auth OTP and MFA hooks
   const { requestOtp, verifyOtp, isLoading: isOtpLoading } = useOtp(apiBaseUrl);
   const { verifyMfa, isLoading: isMfaLoading } = useMfa(apiBaseUrl);
-  
+
   const navigate = useNavigate();
-  
+
   // UI & Form States
   const [step, setStep] = useState(1); // 1: Email, 2: Credentials/Verification
-  const [loginMode, setLoginMode] = useState("password"); // 'password', 'otp', 'mfa', 'magic'
+  const [loginMode, setLoginMode] = useState("password"); // 'password' | 'otp' | 'mfa' | 'magic'
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -28,18 +38,18 @@ export default function Login() {
   const [mfaCode, setMfaCode] = useState("");
   const [mfaTempToken, setMfaTempToken] = useState("");
   const [message, setMessage] = useState("");
+  const [isSuccess, setIsSuccess] = useState(false);
 
   // Redirect to Dashboard if already logged in
   useEffect(() => {
-    if (isAuthenticated) {
-      navigate("/dashboard");
-    }
+    if (isAuthenticated) navigate("/dashboard");
   }, [isAuthenticated, navigate]);
 
   const handleEmailSubmit = (e) => {
     e.preventDefault();
     if (!email) {
       setMessage("Please enter your email address to continue.");
+      setIsSuccess(false);
       return;
     }
     setMessage("");
@@ -63,9 +73,11 @@ export default function Login() {
         await refresh();
         navigate("/dashboard");
       } else {
+        setIsSuccess(false);
         setMessage((res && res.error) || "Login Failed");
       }
     } catch (err) {
+      setIsSuccess(false);
       setMessage(err.message || "Login failed");
     }
   };
@@ -73,6 +85,7 @@ export default function Login() {
   const handleSendOtp = async () => {
     if (!email) {
       setMessage("Please enter your email address first.");
+      setIsSuccess(false);
       return;
     }
     setMessage("");
@@ -80,8 +93,10 @@ export default function Login() {
       await requestOtp(email);
       setLoginMode("otp");
       setStep(2);
+      setIsSuccess(true);
       setMessage("A 6-digit verification code has been sent to your email.");
     } catch (err) {
+      setIsSuccess(false);
       setMessage(err.message || "Failed to send OTP code.");
     }
   };
@@ -89,15 +104,20 @@ export default function Login() {
   const handleSendMagicLink = async () => {
     if (!email) {
       setMessage("Please enter your email address first.");
+      setIsSuccess(false);
       return;
     }
     setMessage("");
     try {
-      await requestMagicLink(email);
+      // v1.0.17: requestMagicLink requires (email, callbackUrl) — callbackUrl is REQUIRED
+      const callbackUrl = `${window.location.origin}/magic-link`;
+      await requestMagicLink(email, callbackUrl);
       setLoginMode("magic");
       setStep(2);
+      setIsSuccess(true);
       setMessage("A passwordless magic link has been sent to your email!");
     } catch (err) {
+      setIsSuccess(false);
       setMessage(err.message || "Failed to send Magic Link.");
     }
   };
@@ -111,6 +131,7 @@ export default function Login() {
       await refresh();
       navigate("/dashboard");
     } catch (err) {
+      setIsSuccess(false);
       setMessage(err.message || "OTP verification failed");
     }
   };
@@ -124,6 +145,7 @@ export default function Login() {
       await refresh();
       navigate("/dashboard");
     } catch (err) {
+      setIsSuccess(false);
       setMessage(err.message || "Invalid 2FA code");
     }
   };
@@ -131,6 +153,7 @@ export default function Login() {
   const handlePasskeyLogin = async () => {
     if (!email) {
       setMessage("Please enter your email first to authenticate with Passkey.");
+      setIsSuccess(false);
       return;
     }
     setMessage("");
@@ -142,6 +165,7 @@ export default function Login() {
         navigate("/dashboard");
       }
     } catch (err) {
+      setIsSuccess(false);
       setMessage(err.message || "Passkey authentication failed.");
     }
   };
@@ -153,6 +177,7 @@ export default function Login() {
   const goBackToEmail = () => {
     setStep(1);
     setMessage("");
+    setLoginMode("password");
   };
 
   if (sessionLoading) {
@@ -198,18 +223,19 @@ export default function Login() {
 
           {/* Error / Info Messages */}
           {message && (
-            <div className="rounded-2xl p-4 mb-4 text-sm text-center border-l-4 font-semibold shadow-sm transition-all duration-300"
+            <div
+              className="rounded-2xl p-4 mb-4 text-sm text-center border-l-4 font-semibold shadow-sm transition-all duration-300"
               style={{
-                backgroundColor: message.includes("sent") || message.includes("sent") ? "#DCFCE7" : "#FEE2E2",
-                borderColor: message.includes("sent") || message.includes("sent") ? "#22C55E" : "#EF4444",
-                color: message.includes("sent") || message.includes("sent") ? "#15803D" : "#B91C1C",
+                backgroundColor: isSuccess ? "#DCFCE7" : "#FEE2E2",
+                borderColor: isSuccess ? "#22C55E" : "#EF4444",
+                color: isSuccess ? "#15803D" : "#B91C1C",
               }}
             >
               {message}
             </div>
           )}
 
-          {/* --- STEP 1: Enter Email ID --- */}
+          {/* --- STEP 1: Enter Email --- */}
           {step === 1 && (
             <div className="space-y-4">
               <form onSubmit={handleEmailSubmit} className="space-y-4">
@@ -252,7 +278,7 @@ export default function Login() {
                 <div className="flex-1 h-px" style={{ backgroundColor: "#CAE8BD" }}></div>
               </div>
 
-              {/* OAuth Providers Buttons */}
+              {/* OAuth Providers */}
               <div className="grid grid-cols-2 gap-3">
                 <button
                   type="button"
@@ -312,7 +338,7 @@ export default function Login() {
                 </div>
               </div>
 
-              {/* Mode A: Password Input */}
+              {/* Mode A: Password */}
               {loginMode === "password" && (
                 <form onSubmit={handlePasswordSubmit} className="space-y-4">
                   <div className="relative">
@@ -339,6 +365,7 @@ export default function Login() {
                       type="button"
                       className="absolute right-3 top-1/2 -translate-y-1/2 p-2 rounded-full hover:bg-[#DDF6D2] transition-colors cursor-pointer"
                       onClick={() => setShowPassword(!showPassword)}
+                      aria-label={showPassword ? "Hide password" : "Show password"}
                     >
                       {showPassword ? (
                         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-[#255F38]">
@@ -363,18 +390,14 @@ export default function Login() {
                   </button>
 
                   <div className="text-center pt-2">
-                    <Link
-                      to="/forgot-password"
-                      className="text-xs font-bold hover:underline"
-                      style={{ color: "#255F38" }}
-                    >
+                    <Link to="/forgot-password" className="text-xs font-bold hover:underline" style={{ color: "#255F38" }}>
                       Forgot your password?
                     </Link>
                   </div>
                 </form>
               )}
 
-              {/* Mode B: Email OTP Input */}
+              {/* Mode B: Email OTP */}
               {loginMode === "otp" && (
                 <form onSubmit={handleVerifyOtpSubmit} className="space-y-4">
                   <div className="relative">
@@ -382,10 +405,11 @@ export default function Login() {
                       id="otpCode"
                       name="otpCode"
                       type="text"
+                      inputMode="numeric"
                       placeholder=" "
                       maxLength={6}
                       value={otpCode}
-                      onChange={(e) => setOtpCode(e.target.value)}
+                      onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, ""))}
                       className="w-full px-4 pt-6 pb-3 rounded-2xl border-1 text-center font-mono text-xl tracking-wider focus:outline-none transition-all duration-300 shadow-sm"
                       style={{ backgroundColor: "#ECFAE5", borderColor: "#CAE8BD", color: "#18230F" }}
                       required
@@ -402,7 +426,7 @@ export default function Login() {
 
                   <button
                     type="submit"
-                    disabled={isOtpLoading}
+                    disabled={isOtpLoading || otpCode.length !== 6}
                     className="w-full font-bold py-4 rounded-full transition-all duration-300 transform hover:scale-[0.98] shadow-lg hover:shadow-xl disabled:opacity-75 cursor-pointer"
                     style={{ background: "linear-gradient(135deg, #B0DB9C 0%, #CAE8BD 100%)", color: "#18230F" }}
                   >
@@ -413,7 +437,8 @@ export default function Login() {
                     <button
                       type="button"
                       onClick={handleSendOtp}
-                      className="text-xs font-bold hover:underline cursor-pointer"
+                      disabled={isOtpLoading}
+                      className="text-xs font-bold hover:underline cursor-pointer disabled:opacity-60"
                       style={{ color: "#255F38" }}
                     >
                       Resend Code
@@ -430,11 +455,11 @@ export default function Login() {
                       id="mfaCode"
                       name="mfaCode"
                       type="text"
+                      inputMode="numeric"
                       placeholder=" "
                       maxLength={6}
-                      pattern="\d*"
                       value={mfaCode}
-                      onChange={(e) => setMfaCode(e.target.value)}
+                      onChange={(e) => setMfaCode(e.target.value.replace(/\D/g, ""))}
                       className="w-full px-4 pt-6 pb-3 rounded-2xl border-1 text-center font-mono text-xl tracking-widest focus:outline-none transition-all duration-300 shadow-sm"
                       style={{ backgroundColor: "#ECFAE5", borderColor: "#CAE8BD", color: "#18230F" }}
                       required
@@ -451,7 +476,7 @@ export default function Login() {
 
                   <button
                     type="submit"
-                    disabled={isMfaLoading}
+                    disabled={isMfaLoading || mfaCode.length !== 6}
                     className="w-full font-bold py-4 rounded-full transition-all duration-300 transform hover:scale-[0.98] shadow-lg hover:shadow-xl disabled:opacity-75 cursor-pointer"
                     style={{ background: "linear-gradient(135deg, #B0DB9C 0%, #CAE8BD 100%)", color: "#18230F" }}
                   >
@@ -460,7 +485,7 @@ export default function Login() {
                 </form>
               )}
 
-              {/* Mode D: Passwordless Magic Link feedback */}
+              {/* Mode D: Magic Link feedback */}
               {loginMode === "magic" && (
                 <div className="text-center space-y-4 py-4">
                   <div className="w-16 h-16 rounded-full bg-green-100 border border-green-500 text-green-500 flex items-center justify-center mx-auto mb-4">
@@ -483,20 +508,17 @@ export default function Login() {
                 </div>
               )}
 
-              {/* Try another way to sign in panel */}
+              {/* Try another way to sign in */}
               {loginMode !== "mfa" && (
                 <div className="pt-6 border-t border-[#CAE8BD] space-y-3">
                   <p className="text-2xs font-extrabold uppercase tracking-wider text-center" style={{ color: "#255F38" }}>
                     Try another way to sign in
                   </p>
-                  
+
                   {loginMode !== "password" && (
                     <button
                       type="button"
-                      onClick={() => {
-                        setLoginMode("password");
-                        setMessage("");
-                      }}
+                      onClick={() => { setLoginMode("password"); setMessage(""); setIsSuccess(false); }}
                       className="w-full font-bold py-3 rounded-full border border-[#CAE8BD] transition-all duration-300 shadow-sm hover:shadow-md cursor-pointer text-xs"
                       style={{ backgroundColor: "#ECFAE5", color: "#255F38" }}
                     >
