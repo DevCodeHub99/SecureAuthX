@@ -36,10 +36,28 @@ export default function Dashboard() {
   const [mfaQrCode, setMfaQrCode] = useState("");
   const [mfaSecret, setMfaSecret] = useState("");
   
-  // Dedicated local states & Ref for Password Update Card (improves contextual visibility and scrolling)
+  // Dedicated local states & Refs for card-specific feedback (improves contextual visibility and scrolling)
   const [passwordError, setPasswordError] = useState("");
   const [passwordSuccess, setPasswordSuccess] = useState("");
   const passwordCardRef = useRef(null);
+
+  const [mfaError, setMfaError] = useState("");
+  const [mfaSuccess, setMfaSuccess] = useState("");
+  const mfaCardRef = useRef(null);
+
+  const [passkeyError, setPasskeyError] = useState("");
+  const [passkeySuccess, setPasskeySuccess] = useState("");
+  const passkeyCardRef = useRef(null);
+
+  const [sessionsError, setSessionsError] = useState("");
+  const [sessionsSuccess, setSessionsSuccess] = useState("");
+  const sessionsCardRef = useRef(null);
+
+  const scrollToCard = (ref) => {
+    setTimeout(() => {
+      ref.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }, 50);
+  };
   
   // RBAC Diagnostics States
   const [testResult, setTestResult] = useState(null);
@@ -68,6 +86,7 @@ export default function Dashboard() {
 
   const fetchSessions = async () => {
     setIsLoadingSessions(true);
+    setSessionsError("");
     try {
       const storedToken = localStorage.getItem('auth-token') || localStorage.getItem('authToken');
       const headers = { 'Content-Type': 'application/json' };
@@ -82,18 +101,18 @@ export default function Dashboard() {
       if (res.ok) {
         setSessions(data.sessions || []);
       } else {
-        setError(data.error || "Failed to load active sessions.");
+        setSessionsError(data.error || "Failed to load active sessions.");
       }
     } catch (err) {
-      setError(err.message || "Failed to load active sessions.");
+      setSessionsError(err.message || "Failed to load active sessions.");
     } finally {
       setIsLoadingSessions(false);
     }
   };
 
   const handleRevokeSession = async (sessionId) => {
-    setError("");
-    setSuccess("");
+    setSessionsError("");
+    setSessionsSuccess("");
     try {
       const storedToken = localStorage.getItem('auth-token') || localStorage.getItem('authToken');
       const headers = { 'Content-Type': 'application/json' };
@@ -106,7 +125,8 @@ export default function Dashboard() {
       });
       const data = await res.json();
       if (res.ok) {
-        setSuccess("Session revoked successfully.");
+        setSessionsSuccess("Session revoked successfully.");
+        scrollToCard(sessionsCardRef);
         const revokedSession = sessions.find(s => s.id === sessionId);
         if (revokedSession && revokedSession.isCurrent) {
           handleLogout();
@@ -114,16 +134,18 @@ export default function Dashboard() {
           fetchSessions();
         }
       } else {
-        setError(data.error || "Failed to revoke session.");
+        setSessionsError(data.error || "Failed to revoke session.");
+        scrollToCard(sessionsCardRef);
       }
     } catch (err) {
-      setError(err.message || "Failed to revoke session.");
+      setSessionsError(err.message || "Failed to revoke session.");
+      scrollToCard(sessionsCardRef);
     }
   };
 
   const handleRevokeOthers = async () => {
-    setError("");
-    setSuccess("");
+    setSessionsError("");
+    setSessionsSuccess("");
     try {
       const storedToken = localStorage.getItem('auth-token') || localStorage.getItem('authToken');
       const headers = { 'Content-Type': 'application/json' };
@@ -136,13 +158,16 @@ export default function Dashboard() {
       });
       const data = await res.json();
       if (res.ok) {
-        setSuccess("Other sessions revoked successfully.");
+        setSessionsSuccess("Other sessions revoked successfully.");
+        scrollToCard(sessionsCardRef);
         fetchSessions();
       } else {
-        setError(data.error || "Failed to revoke other sessions.");
+        setSessionsError(data.error || "Failed to revoke other sessions.");
+        scrollToCard(sessionsCardRef);
       }
     } catch (err) {
-      setError(err.message || "Failed to revoke other sessions.");
+      setSessionsError(err.message || "Failed to revoke other sessions.");
+      scrollToCard(sessionsCardRef);
     }
   };
 
@@ -165,8 +190,8 @@ export default function Dashboard() {
   };
 
   const handleStartMfaSetup = async () => {
-    setError("");
-    setSuccess("");
+    setMfaError("");
+    setMfaSuccess("");
     try {
       const data = await setupMfa();
       if (data && data.qrCodeUrl) {
@@ -175,51 +200,59 @@ export default function Dashboard() {
       }
       setShowMfaSetup(true);
       setShowMfaDisable(false);
+      scrollToCard(mfaCardRef);
     } catch (err) {
-      setError(err.message || "Failed to generate MFA setup QR code.");
+      setMfaError(err.message || "Failed to generate MFA setup QR code.");
+      scrollToCard(mfaCardRef);
     }
   };
 
   const handleEnableMfaSubmit = async (e) => {
     e.preventDefault();
-    setError("");
-    setSuccess("");
+    setMfaError("");
+    setMfaSuccess("");
     try {
       await enableMfa(mfaSecret, mfaSetupCode);
-      setSuccess("Two-factor authentication has been successfully enabled on your account!");
+      setMfaSuccess("Two-factor authentication has been successfully enabled on your account!");
       setShowMfaSetup(false);
       setMfaSetupCode("");
       setMfaQrCode("");
       setMfaSecret("");
+      scrollToCard(mfaCardRef);
       await refresh(); // Refresh user details context
     } catch (err) {
-      setError(err.message || "Invalid verification code.");
+      setMfaError(err.message || "Invalid verification code.");
+      scrollToCard(mfaCardRef);
     }
   };
 
   const handleDisableMfaSubmit = async (e) => {
     e.preventDefault();
-    setError("");
-    setSuccess("");
+    setMfaError("");
+    setMfaSuccess("");
     try {
       await disableMfa(mfaDisableCode);
-      setSuccess("Two-factor authentication has been disabled.");
+      setMfaSuccess("Two-factor authentication has been disabled.");
       setShowMfaDisable(false);
       setMfaDisableCode("");
+      scrollToCard(mfaCardRef);
       await refresh(); // Refresh user details context
     } catch (err) {
-      setError(err.message || "Failed to disable MFA. Verify your verification code.");
+      setMfaError(err.message || "Failed to disable MFA. Verify your verification code.");
+      scrollToCard(mfaCardRef);
     }
   };
 
   const handleRegisterDevicePasskey = async () => {
-    setError("");
-    setSuccess("");
+    setPasskeyError("");
+    setPasskeySuccess("");
     try {
       await registerPasskey(user?.id);
-      setSuccess("Passkey registered successfully! You can now log in passwordlessly using your biometric FaceID/fingerprint scanner on this device.");
+      setPasskeySuccess("Passkey registered successfully! You can now log in passwordlessly using your biometric FaceID/fingerprint scanner on this device.");
+      scrollToCard(passkeyCardRef);
     } catch (err) {
-      setError(err.message || "Failed to register Passkey.");
+      setPasskeyError(err.message || "Failed to register Passkey.");
+      scrollToCard(passkeyCardRef);
     }
   };
 
@@ -381,12 +414,23 @@ export default function Dashboard() {
             {/* Portal Controls Section */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               {/* Authenticator App / MFA Config Card */}
-              <div className="bg-white/40 rounded-2xl p-6 border border-white/50 shadow-sm backdrop-blur-sm flex flex-col justify-between">
+              <div ref={mfaCardRef} className="bg-white/40 rounded-2xl p-6 border border-white/50 shadow-sm backdrop-blur-sm flex flex-col justify-between">
                 <div>
                   <h3 className="text-lg font-bold mb-2" style={{ color: "#18230F" }}>Two-Factor Auth (MFA)</h3>
                   <p className="text-sm mb-4" style={{ color: "#255F38" }}>
                     Secure your account using a standard authenticator app (Google Authenticator, Authy, etc.).
                   </p>
+
+                  {mfaError && (
+                    <div className="rounded-xl p-3 text-xs font-semibold shadow-sm text-center border-l-4 mb-4 bg-red-50 border-red-500 text-red-700">
+                      {mfaError}
+                    </div>
+                  )}
+                  {mfaSuccess && (
+                    <div className="rounded-xl p-3 text-xs font-semibold shadow-sm text-center border-l-4 mb-4 bg-green-50 border-green-500 text-green-700">
+                      {mfaSuccess}
+                    </div>
+                  )}
                 </div>
 
                 <div className="mt-4">
@@ -493,12 +537,23 @@ export default function Dashboard() {
               </div>
 
               {/* Passkeys Device Registration Card */}
-              <div className="bg-white/40 rounded-2xl p-6 border border-white/50 shadow-sm backdrop-blur-sm flex flex-col justify-between">
+              <div ref={passkeyCardRef} className="bg-white/40 rounded-2xl p-6 border border-white/50 shadow-sm backdrop-blur-sm flex flex-col justify-between">
                 <div>
                   <h3 className="text-lg font-bold mb-2" style={{ color: "#18230F" }}>Passkeys & Biometrics</h3>
                   <p className="text-sm mb-4" style={{ color: "#255F38" }}>
                     Enable passwordless login. Securely bind this device's fingerprint or face scanner to your profile.
                   </p>
+
+                  {passkeyError && (
+                    <div className="rounded-xl p-3 text-xs font-semibold shadow-sm text-center border-l-4 mb-4 bg-red-50 border-red-500 text-red-700">
+                      {passkeyError}
+                    </div>
+                  )}
+                  {passkeySuccess && (
+                    <div className="rounded-xl p-3 text-xs font-semibold shadow-sm text-center border-l-4 mb-4 bg-green-50 border-green-500 text-green-700">
+                      {passkeySuccess}
+                    </div>
+                  )}
                 </div>
 
                 <div className="mt-4">
@@ -647,11 +702,22 @@ export default function Dashboard() {
             </div>
 
             {/* Active Sessions & Logged-in Devices Section */}
-            <div className="bg-white/40 rounded-2xl p-6 border border-white/50 shadow-sm backdrop-blur-sm">
+            <div ref={sessionsCardRef} className="bg-white/40 rounded-2xl p-6 border border-white/50 shadow-sm backdrop-blur-sm">
               <h3 className="text-lg font-bold mb-1" style={{ color: "#18230F" }}>Active Sessions & Logged-in Devices</h3>
               <p className="text-sm mb-6" style={{ color: "#255F38" }}>
                 Manage all active session logins for this account. Revoke any session to sign out that device.
               </p>
+
+              {sessionsError && (
+                <div className="rounded-xl p-3 text-xs font-semibold shadow-sm text-center border-l-4 mb-4 bg-red-50 border-red-500 text-red-700">
+                  {sessionsError}
+                </div>
+              )}
+              {sessionsSuccess && (
+                <div className="rounded-xl p-3 text-xs font-semibold shadow-sm text-center border-l-4 mb-4 bg-green-50 border-green-500 text-green-700">
+                  {sessionsSuccess}
+                </div>
+              )}
 
               {isLoadingSessions ? (
                 <p className="text-xs animate-pulse font-semibold" style={{ color: "#255F38" }}>Loading active sessions...</p>
