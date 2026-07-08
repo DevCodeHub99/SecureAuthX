@@ -36,6 +36,11 @@ export default function Dashboard() {
   const [mfaQrCode, setMfaQrCode] = useState("");
   const [mfaSecret, setMfaSecret] = useState("");
   
+  // Dedicated local states & Ref for Password Update Card (improves contextual visibility and scrolling)
+  const [passwordError, setPasswordError] = useState("");
+  const [passwordSuccess, setPasswordSuccess] = useState("");
+  const passwordCardRef = useRef(null);
+  
   // RBAC Diagnostics States
   const [testResult, setTestResult] = useState(null);
 
@@ -147,6 +152,13 @@ export default function Dashboard() {
     }
   }, [user]);
 
+  // Smooth scroll to top when global alerts are triggered
+  useEffect(() => {
+    if (error || success) {
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }
+  }, [error, success]);
+
   const handleLogout = async () => {
     await signOut();
     navigate("/");
@@ -213,16 +225,18 @@ export default function Dashboard() {
 
   const handleUpdatePasswordSubmit = async (e) => {
     e.preventDefault();
-    setError("");
-    setSuccess("");
+    setPasswordError("");
+    setPasswordSuccess("");
     
     if (newPassword.length < 8) {
-      setError("New password must be at least 8 characters long.");
+      setPasswordError("New password must be at least 8 characters long.");
+      setTimeout(() => passwordCardRef.current?.scrollIntoView({ behavior: "smooth", block: "center" }), 50);
       return;
     }
     
     if (newPassword !== confirmPassword) {
-      setError("Passwords do not match.");
+      setPasswordError("Passwords do not match.");
+      setTimeout(() => passwordCardRef.current?.scrollIntoView({ behavior: "smooth", block: "center" }), 50);
       return;
     }
 
@@ -231,15 +245,17 @@ export default function Dashboard() {
       // which verifies current password, hashes new password, and invalidates all
       // existing sessions via deleteSessionsByUserId for security.
       await updatePassword(currentPassword, newPassword);
-      setSuccess("Your password has been updated successfully! Other active sessions have been invalidated.");
+      setPasswordSuccess("Your password has been updated successfully! Other active sessions have been invalidated.");
       setCurrentPassword("");
       setNewPassword("");
       setConfirmPassword("");
+      setTimeout(() => passwordCardRef.current?.scrollIntoView({ behavior: "smooth", block: "center" }), 50);
       // Refresh session context to pick up the newly issued token from the server
       await new Promise((resolve) => setTimeout(resolve, 150));
       await refresh();
     } catch (err) {
-      setError(err.message || "Failed to update password.");
+      setPasswordError(err.message || "Failed to update password.");
+      setTimeout(() => passwordCardRef.current?.scrollIntoView({ behavior: "smooth", block: "center" }), 50);
     }
   };
 
@@ -502,11 +518,23 @@ export default function Dashboard() {
             </div>
 
             {/* Update Password Settings Card */}
-            <div className="bg-white/40 rounded-2xl p-6 border border-white/50 shadow-sm backdrop-blur-sm">
+            <div ref={passwordCardRef} className="bg-white/40 rounded-2xl p-6 border border-white/50 shadow-sm backdrop-blur-sm">
               <h3 className="text-lg font-bold mb-2" style={{ color: "#18230F" }}>Update Password</h3>
               <p className="text-sm mb-4" style={{ color: "#255F38" }}>
                 Ensure your account is secure by changing your password regularly.
               </p>
+
+              {passwordError && (
+                <div className="rounded-xl p-3 text-xs font-semibold shadow-sm text-center border-l-4 mb-4 bg-red-50 border-red-500 text-red-700">
+                  {passwordError}
+                </div>
+              )}
+              {passwordSuccess && (
+                <div className="rounded-xl p-3 text-xs font-semibold shadow-sm text-center border-l-4 mb-4 bg-green-50 border-green-500 text-green-700">
+                  {passwordSuccess}
+                </div>
+              )}
+
               <form onSubmit={handleUpdatePasswordSubmit} className="space-y-4 max-w-md">
                 <div className="relative">
                   <input

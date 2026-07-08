@@ -128,7 +128,7 @@ router.post(
   '/password/update',
   requireAuth,
   [
-    body('password').isLength({ min: 8 }).withMessage('New password must be at least 8 characters long'),
+    body('newPassword').isLength({ min: 8 }).withMessage('New password must be at least 8 characters long'),
   ],
   validateRequest,
   updatePassword,

@@ -528,10 +528,10 @@ export const handleAuthRequest = async (req, res) => {
 // ---------------------------------------------------------------------------
 export const updatePassword = async (req, res) => {
   try {
-    const { currentPassword, password: newPassword } = req.body;
+    const { currentPassword, newPassword } = req.body;
 
     if (!currentPassword || !newPassword) {
-      return res.status(400).json({ error: 'currentPassword and password are required.' });
+      return res.status(400).json({ error: 'currentPassword and newPassword are required.' });
     }
     if (newPassword.length < 8) {
       return res.status(400).json({ error: 'New password must be at least 8 characters long.' });
