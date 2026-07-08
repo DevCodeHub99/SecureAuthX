@@ -614,10 +614,10 @@ export default function Dashboard() {
               </p>
 
               {sessions.length > 1 && (
-                <div className="mb-4">
+                <div className="mb-3">
                   <button
                     onClick={handleRevokeOthers}
-                    className="py-2 px-5 rounded-full font-bold text-2xs transition-all duration-300 transform hover:scale-[0.98] cursor-pointer shadow-md bg-red-600 text-white hover:bg-red-700"
+                    className="py-1.5 px-3.5 rounded-lg font-bold text-2xs transition-all duration-300 transform hover:scale-[0.98] cursor-pointer border border-red-300 bg-white text-red-600 hover:bg-red-50 shadow-sm"
                   >
                     Remove all except current device
                   </button>
@@ -629,36 +629,36 @@ export default function Dashboard() {
               ) : sessions.length === 0 ? (
                 <p className="text-xs font-semibold" style={{ color: "#255F38" }}>No active sessions found.</p>
               ) : (
-                <div className="space-y-3">
+                <div className="space-y-2">
                   {sessions.map((s) => (
                     <div
                       key={s.id}
-                      className="p-4 rounded-xl flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 transition-all duration-300 border border-white/30"
+                      className="p-3 rounded-lg flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 transition-all duration-300 border border-white/30"
                       style={{ backgroundColor: s.isCurrent ? "#DDF6D2" : "#ECFAE5" }}
                     >
                       <div className="space-y-1">
                         <div className="flex items-center space-x-2">
-                          <span className="text-xs font-bold text-[#18230F]">
+                          <span className="text-xs font-semibold text-[#18230F]">
                             Session: {s.userAgent} — {s.ipAddress}
                           </span>
                           {s.isCurrent && (
-                            <span className="px-2 py-0.5 rounded-full text-3xs font-extrabold bg-[#255F38] text-[#ECFAE5] uppercase tracking-wider">
+                            <span className="px-2 py-0.5 rounded-full text-4xs font-extrabold bg-[#255F38] text-[#ECFAE5] uppercase tracking-wider">
                               Current Device
                             </span>
                           )}
                         </div>
-                        <p className="text-3xs text-gray-600 font-semibold">
+                        <p className="text-3xs text-gray-500 font-semibold">
                           Created: {formatDate(s.createdAt)}
                         </p>
                       </div>
                       
                       <button
                         onClick={() => handleRevokeSession(s.id)}
-                        className="py-1.5 px-4 rounded-full font-bold text-2xs transition-all duration-300 transform hover:scale-[0.98] cursor-pointer shadow-sm w-full sm:w-auto"
+                        className="py-1 px-3 rounded-lg font-bold text-2xs transition-all duration-300 transform hover:scale-[0.98] cursor-pointer shadow-sm w-full sm:w-auto text-center"
                         style={{
-                          backgroundColor: s.isCurrent ? "#EF4444" : "#FEE2E2",
-                          color: s.isCurrent ? "#FFF" : "#B91C1C",
-                          border: s.isCurrent ? "none" : "1px solid #EF4444"
+                          backgroundColor: s.isCurrent ? "#DC2626" : "#FFF",
+                          color: s.isCurrent ? "#FFF" : "#DC2626",
+                          border: "1px solid #DC2626"
                         }}
                       >
                         {s.isCurrent ? "Revoke & Log Out" : "Revoke Session"}
