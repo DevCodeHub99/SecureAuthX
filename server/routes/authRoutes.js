@@ -122,7 +122,7 @@ router.post(
 // Authenticated routes (require valid session)
 // ---------------------------------------------------------------------------
 router.post(
-  '/update-password',
+  '/password/update',
   requireAuth,
   [
     body('password').isLength({ min: 8 }).withMessage('New password must be at least 8 characters long'),
@@ -132,12 +132,13 @@ router.post(
 );
 
 // ---------------------------------------------------------------------------
-// Catch-all routes — handled by auth.handleRequest() (MFA, WebAuthn, OAuth, OTP)
+// Catch-all routes — handled by auth.handleRequest() (MFA, WebAuthn, OAuth, OTP, Profile)
 // ---------------------------------------------------------------------------
 router.use('/mfa', handleAuthRequest);
 router.use('/webauthn', handleAuthRequest);
 router.use('/oauth', handleAuthRequest);
 router.use('/callback', handleAuthRequest);
 router.use('/otp', handleAuthRequest);
+router.use('/profile', handleAuthRequest);
 
 export default router;
