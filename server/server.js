@@ -100,6 +100,19 @@ app.use(
 // Order: json → sanitize → cookieParser (sanitize runs BEFORE cookie reads)
 // ---------------------------------------------------------------------------
 app.use(express.json({ limit: "10kb" })); // Limit body size to prevent DoS
+// Make req.query writable in Express 5 so express-mongo-sanitize can clean it without throwing
+app.use((req, res, next) => {
+  if (req.query) {
+    Object.defineProperty(req, 'query', {
+      value: { ...req.query },
+      writable: true,
+      configurable: true,
+      enumerable: true,
+    });
+  }
+  next();
+});
+
 app.use(mongoSanitize());
 app.use(cookieParser());
 
