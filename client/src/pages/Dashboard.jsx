@@ -42,6 +42,13 @@ export default function Dashboard() {
   const [sessions, setSessions] = useState([]);
   const [isLoadingSessions, setIsLoadingSessions] = useState(false);
 
+  const formatDate = (dateString) => {
+    if (!dateString) return "";
+    const d = new Date(dateString);
+    const pad = (n) => String(n).padStart(2, '0');
+    return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()}, ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+  };
+
   const fetchSessions = async () => {
     setIsLoadingSessions(true);
     try {
@@ -595,8 +602,8 @@ export default function Dashboard() {
                     >
                       <div className="space-y-1">
                         <div className="flex items-center space-x-2">
-                          <span className="font-mono text-xs font-bold text-[#18230F]">
-                            Session ID: {s.id.slice(-6).toUpperCase()}...
+                          <span className="text-xs font-bold text-[#18230F]">
+                            Session: {s.userAgent} — {s.ipAddress}
                           </span>
                           {s.isCurrent && (
                             <span className="px-2 py-0.5 rounded-full text-3xs font-extrabold bg-[#255F38] text-[#ECFAE5] uppercase tracking-wider">
@@ -604,11 +611,8 @@ export default function Dashboard() {
                             </span>
                           )}
                         </div>
-                        <p className="text-3xs text-gray-500 font-semibold">
-                          Created: {new Date(s.createdAt).toLocaleString()}
-                        </p>
-                        <p className="text-3xs text-gray-500 font-semibold">
-                          Expires: {new Date(s.expiresAt).toLocaleString()}
+                        <p className="text-3xs text-gray-600 font-semibold">
+                          Created: {formatDate(s.createdAt)}
                         </p>
                       </div>
                       

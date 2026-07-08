@@ -15,6 +15,25 @@ import {
 } from '@custom-auth/core';
 import { MongooseAdapter } from '@custom-auth/mongoose';
 import { SmtpEmailAdapter } from '@custom-auth/adapter-nodemailer';
+import mongoose, { Schema } from 'mongoose';
+
+// ---------------------------------------------------------------------------
+// CustomSessionModel — registers custom schema fields for IP & User-Agent metadata
+// ---------------------------------------------------------------------------
+const CustomSessionSchema = new Schema(
+  {
+    userId: { type: Schema.Types.ObjectId, required: true, ref: "User" },
+    expiresAt: { type: Date, required: true },
+    ipAddress: { type: String, default: 'Unknown IP' },
+    userAgent: { type: String, default: 'Authorized Device' },
+  },
+  { timestamps: true }
+);
+
+CustomSessionSchema.index({ userId: 1 });
+CustomSessionSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
+
+export const CustomSessionModel = mongoose.models["Session"] || mongoose.model("Session", CustomSessionSchema);
 
 // ---------------------------------------------------------------------------
 // WrappedMongooseAdapter — normalizes WebAuthn base64url credential IDs to
@@ -65,7 +84,7 @@ export const auth = createAuth({
   session: {
     expiresIn: `${(parseInt(process.env.COOKIE_MAX_AGE_DAYS) || 7) * 24}h`,
   },
-  adapter: new WrappedMongooseAdapter(),
+  adapter: new WrappedMongooseAdapter({ SessionModel: CustomSessionModel }),
   emailAdapter: new SmtpEmailAdapter({
     host: process.env.SMTP_HOST || 'smtp.gmail.com',
     port: Number(process.env.SMTP_PORT) || 587,
@@ -170,6 +189,46 @@ const getCookieOptions = (req) => {
 };
 
 // ---------------------------------------------------------------------------
+// updateSessionMeta — updates the newly created session with IP & User-Agent metadata
+// ---------------------------------------------------------------------------
+const updateSessionMeta = async (req, token) => {
+  try {
+    if (!token) return;
+    const payload = await auth.sessionManager.verifyToken(token);
+    if (payload?.jti) {
+      const rawUserAgent = req.headers['user-agent'] || '';
+      let deviceName = 'Authorized Device';
+      
+      if (/windows/i.test(rawUserAgent)) deviceName = 'Windows PC';
+      else if (/macintosh/i.test(rawUserAgent)) deviceName = 'Mac';
+      else if (/iphone/i.test(rawUserAgent)) deviceName = 'iPhone';
+      else if (/ipad/i.test(rawUserAgent)) deviceName = 'iPad';
+      else if (/android/i.test(rawUserAgent)) deviceName = 'Android Device';
+      else if (/linux/i.test(rawUserAgent)) deviceName = 'Linux Device';
+
+      let browserName = '';
+      if (/chrome|crios/i.test(rawUserAgent) && !/edge|edg/i.test(rawUserAgent)) browserName = 'Chrome';
+      else if (/safari/i.test(rawUserAgent) && !/chrome|crios/i.test(rawUserAgent)) browserName = 'Safari';
+      else if (/firefox|fxios/i.test(rawUserAgent)) browserName = 'Firefox';
+      else if (/edge|edg/i.test(rawUserAgent)) browserName = 'Edge';
+      else if (/opera|opr/i.test(rawUserAgent)) browserName = 'Opera';
+
+      const userAgentLabel = browserName ? `${deviceName} (${browserName})` : deviceName;
+
+      const rawIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress || '';
+      const ipAddress = rawIp.split(',')[0].trim().replace(/^.*:/, ''); 
+
+      await auth.config.adapter.sessionModel.findByIdAndUpdate(payload.jti, {
+        userAgent: userAgentLabel,
+        ipAddress: ipAddress || '127.0.0.1',
+      });
+    }
+  } catch (error) {
+    console.error('[updateSessionMeta] Failed to update session metadata:', error.message);
+  }
+};
+
+// ---------------------------------------------------------------------------
 // GET /api/auth/session — returns current authenticated user (fresh DB data)
 // ---------------------------------------------------------------------------
 export const session = async (req, res) => {
@@ -238,6 +297,7 @@ export const login = async (req, res) => {
 
     const { user, token } = result;
     res.cookie('auth-token', token, getCookieOptions(req));
+    await updateSessionMeta(req, token);
     return res.status(200).json({ user, token });
   } catch (error) {
     const { status, message } = mapAuthError(error);
@@ -317,6 +377,7 @@ export const resetPassword = async (req, res) => {
 
     const { user, token: sessionToken } = loginResult;
     res.cookie('auth-token', sessionToken, getCookieOptions(req));
+    await updateSessionMeta(req, sessionToken);
     return res.status(200).json({ message: 'Password updated successfully.', user, token: sessionToken });
   } catch (error) {
     const { status, message } = mapAuthError(error);
@@ -361,6 +422,7 @@ export const verifyMagicLink = async (req, res) => {
     const { user, token: sessionToken } = await auth.flows.verifyMagicLink(String(token), normalizedEmail);
 
     res.cookie('auth-token', sessionToken, getCookieOptions(req));
+    await updateSessionMeta(req, sessionToken);
     return res.status(200).json({ user, token: sessionToken });
   } catch (error) {
     const { status, message } = mapAuthError(error);
@@ -383,6 +445,7 @@ export const verifyEmail = async (req, res) => {
     // Issue a session token so the user is auto-logged-in after verifying
     const sessionToken = await auth.sessionManager.createToken(user);
     res.cookie('auth-token', sessionToken, getCookieOptions(req));
+    await updateSessionMeta(req, sessionToken);
     return res.status(200).json({ user, token: sessionToken });
   } catch (error) {
     const { status, message } = mapAuthError(error);
@@ -434,6 +497,14 @@ export const handleAuthRequest = async (req, res) => {
     });
 
     const text = await webRes.text();
+    if (webRes.status === 200) {
+      try {
+        const data = JSON.parse(text);
+        if (data && data.token) {
+          await updateSessionMeta(req, data.token);
+        }
+      } catch (_) {}
+    }
     return res.send(text);
   } catch (error) {
     console.error('[handleAuthRequest]', error.message);
@@ -466,6 +537,7 @@ export const updatePassword = async (req, res) => {
     const dbUser = await auth.config.adapter.getUserById(req.user.id);
     const newToken = await auth.sessionManager.createToken(dbUser);
     res.cookie('auth-token', newToken, getCookieOptions(req));
+    await updateSessionMeta(req, newToken);
 
     return res.status(200).json({
       message: 'Password updated. All other sessions have been signed out for your security.',
@@ -527,6 +599,7 @@ export const resetPasswordWithOtp = async (req, res) => {
     // edge case where user registered via OTP without completing email verification
     const sessionToken = await auth.sessionManager.createToken(user);
     res.cookie('auth-token', sessionToken, getCookieOptions(req));
+    await updateSessionMeta(req, sessionToken);
 
     return res.status(200).json({
       message: 'Password reset successfully.',
@@ -557,6 +630,8 @@ export const listSessions = async (req, res) => {
         id: s.id,
         createdAt: s.createdAt,
         expiresAt: s.expiresAt,
+        ipAddress: s.ipAddress || 'Unknown IP',
+        userAgent: s.userAgent || 'Authorized Session',
         isCurrent: s.id === req.user.sessionId,
       })),
     });
