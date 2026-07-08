@@ -15,6 +15,8 @@ import {
   handleAuthRequest,
   updatePassword,
   resetPasswordWithOtp,
+  listSessions,
+  revokeSession,
 } from '../controllers/authController.js';
 
 const router = express.Router();
@@ -130,6 +132,9 @@ router.post(
   validateRequest,
   updatePassword,
 );
+
+router.get('/sessions', requireAuth, listSessions);
+router.delete('/sessions/:id', requireAuth, revokeSession);
 
 // ---------------------------------------------------------------------------
 // Catch-all routes — handled by auth.handleRequest() (MFA, WebAuthn, OAuth, OTP, Profile)

@@ -32,6 +32,7 @@ export const requireAuth = async (req, res, next) => {
       role: dbUser.role || 'user',
       name: dbUser.name,
       mfaEnabled: dbUser.mfaEnabled,
+      sessionId: payload.jti, // Attach session ID (jti) from the verified token
     };
 
     next();

@@ -538,3 +538,57 @@ export const resetPasswordWithOtp = async (req, res) => {
     return res.status(status).json({ error: message });
   }
 };
+
+// ---------------------------------------------------------------------------
+// GET /api/auth/sessions (authenticated)
+// Returns a list of active sessions for the logged-in user.
+// ---------------------------------------------------------------------------
+export const listSessions = async (req, res) => {
+  try {
+    const dbAdapter = auth.config.adapter;
+    // Find all unexpired sessions for this user
+    const sessions = await dbAdapter.sessionModel.find({
+      userId: req.user.id,
+      expiresAt: { $gt: new Date() },
+    }).sort({ createdAt: -1 });
+
+    return res.status(200).json({
+      sessions: sessions.map(s => ({
+        id: s.id,
+        createdAt: s.createdAt,
+        expiresAt: s.expiresAt,
+        isCurrent: s.id === req.user.sessionId,
+      })),
+    });
+  } catch (error) {
+    console.error('[listSessions Error]:', error.message);
+    return res.status(500).json({ error: 'Failed to retrieve active sessions.' });
+  }
+};
+
+// ---------------------------------------------------------------------------
+// DELETE /api/auth/sessions/:id (authenticated)
+// Revokes the specified session.
+// ---------------------------------------------------------------------------
+export const revokeSession = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const dbAdapter = auth.config.adapter;
+
+    // Verify session belongs to the requesting user before revoking
+    const sessionRecord = await dbAdapter.getSession(id);
+    if (!sessionRecord) {
+      return res.status(404).json({ error: 'Session not found.' });
+    }
+
+    if (String(sessionRecord.userId) !== String(req.user.id)) {
+      return res.status(403).json({ error: 'Forbidden: Cannot revoke other user\'s session.' });
+    }
+
+    await dbAdapter.deleteSession(id);
+    return res.status(200).json({ message: 'Session revoked successfully.' });
+  } catch (error) {
+    console.error('[revokeSession Error]:', error.message);
+    return res.status(500).json({ error: 'Failed to revoke session.' });
+  }
+};

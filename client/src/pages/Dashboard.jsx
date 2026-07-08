@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useSession, useSignOut, useMfa, usePasskeys, useAuth, useUpdatePassword } from "@custom-auth/react";
 import { useNavigate } from "react-router-dom";
 import logo from "../assets/secure-auth-x-logo.png";
@@ -37,6 +37,71 @@ export default function Dashboard() {
   
   // RBAC Diagnostics States
   const [testResult, setTestResult] = useState(null);
+
+  // Active Sessions States
+  const [sessions, setSessions] = useState([]);
+  const [isLoadingSessions, setIsLoadingSessions] = useState(false);
+
+  const fetchSessions = async () => {
+    setIsLoadingSessions(true);
+    try {
+      const storedToken = localStorage.getItem('auth-token') || localStorage.getItem('authToken');
+      const headers = { 'Content-Type': 'application/json' };
+      if (storedToken) headers['Authorization'] = `Bearer ${storedToken}`;
+
+      const res = await fetch(`${apiBaseUrl}/sessions`, {
+        method: "GET",
+        credentials: "include",
+        headers,
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setSessions(data.sessions || []);
+      } else {
+        setError(data.error || "Failed to load active sessions.");
+      }
+    } catch (err) {
+      setError(err.message || "Failed to load active sessions.");
+    } finally {
+      setIsLoadingSessions(false);
+    }
+  };
+
+  const handleRevokeSession = async (sessionId) => {
+    setError("");
+    setSuccess("");
+    try {
+      const storedToken = localStorage.getItem('auth-token') || localStorage.getItem('authToken');
+      const headers = { 'Content-Type': 'application/json' };
+      if (storedToken) headers['Authorization'] = `Bearer ${storedToken}`;
+
+      const res = await fetch(`${apiBaseUrl}/sessions/${sessionId}`, {
+        method: "DELETE",
+        credentials: "include",
+        headers,
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setSuccess("Session revoked successfully.");
+        const revokedSession = sessions.find(s => s.id === sessionId);
+        if (revokedSession && revokedSession.isCurrent) {
+          handleLogout();
+        } else {
+          fetchSessions();
+        }
+      } else {
+        setError(data.error || "Failed to revoke session.");
+      }
+    } catch (err) {
+      setError(err.message || "Failed to revoke session.");
+    }
+  };
+
+  useEffect(() => {
+    if (user) {
+      fetchSessions();
+    }
+  }, [user]);
 
   const handleLogout = async () => {
     await signOut();
@@ -507,6 +572,61 @@ export default function Dashboard() {
                   {isUpdatingPassword ? "Updating..." : "Update Password"}
                 </button>
               </form>
+            </div>
+
+            {/* Active Sessions & Logged-in Devices Section */}
+            <div className="bg-white/40 rounded-2xl p-6 border border-white/50 shadow-sm backdrop-blur-sm">
+              <h3 className="text-lg font-bold mb-2" style={{ color: "#18230F" }}>Active Sessions & Logged-in Devices</h3>
+              <p className="text-sm mb-4" style={{ color: "#255F38" }}>
+                Manage all active session logins for this account. Revoke any session to sign out that device.
+              </p>
+
+              {isLoadingSessions ? (
+                <p className="text-xs animate-pulse font-semibold" style={{ color: "#255F38" }}>Loading active sessions...</p>
+              ) : sessions.length === 0 ? (
+                <p className="text-xs font-semibold" style={{ color: "#255F38" }}>No active sessions found.</p>
+              ) : (
+                <div className="space-y-3">
+                  {sessions.map((s) => (
+                    <div
+                      key={s.id}
+                      className="p-4 rounded-xl flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 transition-all duration-300 border border-white/30"
+                      style={{ backgroundColor: s.isCurrent ? "#DDF6D2" : "#ECFAE5" }}
+                    >
+                      <div className="space-y-1">
+                        <div className="flex items-center space-x-2">
+                          <span className="font-mono text-xs font-bold text-[#18230F]">
+                            Session ID: {s.id.slice(-6).toUpperCase()}...
+                          </span>
+                          {s.isCurrent && (
+                            <span className="px-2 py-0.5 rounded-full text-3xs font-extrabold bg-[#255F38] text-[#ECFAE5] uppercase tracking-wider">
+                              Current Device
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-3xs text-gray-500 font-semibold">
+                          Created: {new Date(s.createdAt).toLocaleString()}
+                        </p>
+                        <p className="text-3xs text-gray-500 font-semibold">
+                          Expires: {new Date(s.expiresAt).toLocaleString()}
+                        </p>
+                      </div>
+                      
+                      <button
+                        onClick={() => handleRevokeSession(s.id)}
+                        className="py-1.5 px-4 rounded-full font-bold text-2xs transition-all duration-300 transform hover:scale-[0.98] cursor-pointer shadow-sm w-full sm:w-auto"
+                        style={{
+                          backgroundColor: s.isCurrent ? "#EF4444" : "#FEE2E2",
+                          color: s.isCurrent ? "#FFF" : "#B91C1C",
+                          border: s.isCurrent ? "none" : "1px solid #EF4444"
+                        }}
+                      >
+                        {s.isCurrent ? "Revoke & Log Out" : "Revoke Session"}
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
 
             {/* RBAC Diagnostics Area */}
