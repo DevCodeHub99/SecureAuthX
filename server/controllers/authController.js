@@ -61,20 +61,20 @@ if (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32) {
 // createAuth — single instance shared across all request handlers.
 // ---------------------------------------------------------------------------
 export const auth = createAuth({
-  secret: process.env.JWT_SECRET,
+  secret: process.env.JWT_SECRET || 'temporary_development_fallback_secret_at_least_32_characters_long',
   session: {
     expiresIn: `${(parseInt(process.env.COOKIE_MAX_AGE_DAYS) || 7) * 24}h`,
   },
   adapter: new WrappedMongooseAdapter(),
   emailAdapter: new SmtpEmailAdapter({
-    host: process.env.SMTP_HOST,
-    port: Number(process.env.SMTP_PORT),
+    host: process.env.SMTP_HOST || 'smtp.gmail.com',
+    port: Number(process.env.SMTP_PORT) || 587,
     secure: process.env.SMTP_SECURE === 'true',
     auth: {
-      user: process.env.SMTP_USER,
-      pass: process.env.SMTP_PASS,
+      user: process.env.SMTP_USER || '',
+      pass: process.env.SMTP_PASS || '',
     },
-    from: process.env.EMAIL_FROM,
+    from: process.env.EMAIL_FROM || 'SecureAuthX <no-reply@example.com>',
   }),
   emailVerification: true,
   verifyEmailUrl: `${process.env.CLIENT_URL}/verify-email`,
@@ -132,6 +132,9 @@ export const auth = createAuth({
 // Keeps all catch blocks DRY. Returns { status, message }.
 // ---------------------------------------------------------------------------
 function mapAuthError(error) {
+  // Log the error for server-side troubleshooting / Vercel logging
+  console.error('[mapAuthError] Caught auth error:', error);
+
   if (error instanceof InvalidCredentialsError) return { status: 401, message: error.message };
   if (error instanceof UserExistsError)         return { status: 409, message: error.message };
   if (error instanceof UserNotFoundError)        return { status: 404, message: error.message };

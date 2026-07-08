@@ -16,13 +16,19 @@ import { requirePermission } from "./middlewares/requirePermission.js";
 // ---------------------------------------------------------------------------
 // Database connection
 // ---------------------------------------------------------------------------
-mongoose
-  .connect(process.env.MONGODB_URI)
-  .then(() => console.log("[DB] MongoDB connected"))
-  .catch((error) => {
-    console.error("[DB] Connection failed:", error.message);
-    process.exit(1);
-  });
+const isVercel = process.env.VERCEL === "1";
+
+if (mongoose.connection.readyState === 0) {
+  mongoose
+    .connect(process.env.MONGODB_URI)
+    .then(() => console.log("[DB] MongoDB connected"))
+    .catch((error) => {
+      console.error("[DB] Connection failed:", error.message);
+      if (!isVercel) {
+        process.exit(1);
+      }
+    });
+}
 
 const app = express();
 
@@ -146,7 +152,7 @@ app.use(errorHandler);
 // is skipped. On all other hosts NODE_ENV may be 'production', so we check
 // for the VERCEL env variable instead.
 // ---------------------------------------------------------------------------
-const isVercel = process.env.VERCEL === "1";
+// isVercel is already declared at the top of the file
 if (!isVercel) {
   const PORT = parseInt(process.env.PORT) || 5001;
   const server = app.listen(PORT, () => {
