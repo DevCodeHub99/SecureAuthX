@@ -104,6 +104,31 @@ export default function Dashboard() {
     }
   };
 
+  const handleRevokeOthers = async () => {
+    setError("");
+    setSuccess("");
+    try {
+      const storedToken = localStorage.getItem('auth-token') || localStorage.getItem('authToken');
+      const headers = { 'Content-Type': 'application/json' };
+      if (storedToken) headers['Authorization'] = `Bearer ${storedToken}`;
+
+      const res = await fetch(`${apiBaseUrl}/sessions/revoke-others`, {
+        method: "POST",
+        credentials: "include",
+        headers,
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setSuccess("Other sessions revoked successfully.");
+        fetchSessions();
+      } else {
+        setError(data.error || "Failed to revoke other sessions.");
+      }
+    } catch (err) {
+      setError(err.message || "Failed to revoke other sessions.");
+    }
+  };
+
   useEffect(() => {
     if (user) {
       fetchSessions();
@@ -587,6 +612,17 @@ export default function Dashboard() {
               <p className="text-sm mb-4" style={{ color: "#255F38" }}>
                 Manage all active session logins for this account. Revoke any session to sign out that device.
               </p>
+
+              {sessions.length > 1 && (
+                <div className="mb-4">
+                  <button
+                    onClick={handleRevokeOthers}
+                    className="py-2 px-5 rounded-full font-bold text-2xs transition-all duration-300 transform hover:scale-[0.98] cursor-pointer shadow-md bg-red-600 text-white hover:bg-red-700"
+                  >
+                    Remove all except current device
+                  </button>
+                </div>
+              )}
 
               {isLoadingSessions ? (
                 <p className="text-xs animate-pulse font-semibold" style={{ color: "#255F38" }}>Loading active sessions...</p>

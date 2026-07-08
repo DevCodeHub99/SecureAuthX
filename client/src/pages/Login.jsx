@@ -16,7 +16,7 @@ export default function Login() {
 
   // v1.0.17: useSignIn / useSignOut / useSignUp take NO arguments —
   // they read apiBaseUrl from AuthProvider context internally.
-  const { signIn } = useSignIn();
+  const { signIn, isLoading: isSignInLoading } = useSignIn();
   const { refresh } = useAuth();
 
   // These hooks still accept apiBaseUrl (they call specific endpoints directly)
@@ -383,10 +383,11 @@ export default function Login() {
 
                   <button
                     type="submit"
-                    className="w-full font-bold py-4 rounded-full transition-all duration-300 transform hover:scale-[0.98] shadow-lg hover:shadow-xl cursor-pointer"
+                    disabled={isSignInLoading}
+                    className="w-full font-bold py-4 rounded-full transition-all duration-300 transform hover:scale-[0.98] shadow-lg hover:shadow-xl cursor-pointer disabled:opacity-75"
                     style={{ background: "linear-gradient(135deg, #B0DB9C 0%, #CAE8BD 100%)", color: "#18230F" }}
                   >
-                    Sign In
+                    {isSignInLoading ? "Signing In..." : "Sign In"}
                   </button>
 
                   <div className="text-center pt-2">

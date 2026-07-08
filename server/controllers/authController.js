@@ -215,12 +215,21 @@ const updateSessionMeta = async (req, token) => {
 
       const userAgentLabel = browserName ? `${deviceName} (${browserName})` : deviceName;
 
-      const rawIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress || '';
-      const ipAddress = rawIp.split(',')[0].trim().replace(/^.*:/, ''); 
+      // Extract client IP (handle multiple proxies securely)
+      const rawIp = req.headers['x-forwarded-for'] || req.headers['x-real-ip'] || req.ip || req.socket?.remoteAddress || '';
+      let ipAddress = String(rawIp).split(',')[0].trim();
+      
+      // Clean IPv6 loopback or mapped IPv4 addresses
+      if (ipAddress.startsWith('::ffff:')) {
+        ipAddress = ipAddress.slice(7);
+      }
+      if (ipAddress === '::1') {
+        ipAddress = '127.0.0.1';
+      }
 
       await auth.config.adapter.sessionModel.findByIdAndUpdate(payload.jti, {
         userAgent: userAgentLabel,
-        ipAddress: ipAddress || '127.0.0.1',
+        ipAddress: ipAddress || 'Unknown IP',
       });
     }
   } catch (error) {
@@ -665,5 +674,24 @@ export const revokeSession = async (req, res) => {
   } catch (error) {
     console.error('[revokeSession Error]:', error.message);
     return res.status(500).json({ error: 'Failed to revoke session.' });
+  }
+};
+
+// ---------------------------------------------------------------------------
+// POST /api/auth/sessions/revoke-others (authenticated)
+// Revokes all sessions except the current one.
+// ---------------------------------------------------------------------------
+export const revokeOthers = async (req, res) => {
+  try {
+    const dbAdapter = auth.config.adapter;
+    // Delete all sessions for this user EXCEPT the current session ID (sessionId)
+    await dbAdapter.sessionModel.deleteMany({
+      userId: req.user.id,
+      _id: { $ne: req.user.sessionId }
+    });
+    return res.status(200).json({ message: 'All other sessions revoked successfully.' });
+  } catch (error) {
+    console.error('[revokeOthers Error]:', error.message);
+    return res.status(500).json({ error: 'Failed to revoke other sessions.' });
   }
 };
