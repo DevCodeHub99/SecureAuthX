@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useSession, useSignOut, useMfa, usePasskeys, useAuth, useUpdatePassword } from "@custom-auth/react";
 import { useNavigate } from "react-router-dom";
 import logo from "../assets/secure-auth-x-logo.png";
